@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { isTauri } from '@tauri-apps/api/core'
 import PageIntro from '../components/common/PageIntro.vue'
 import { selectLibraryParentFolder } from '../services/nativeDialogs'
 import { createLibraryStructure, registerLibraryRoot } from '../services/filesystem'
 import { getSavedLibraryRoot, joinPath, loadLibraryRoot, persistLibraryRoot, splitPath } from '../services/librarySettings'
+import { applyAppearanceSettings, DEFAULT_APPEARANCE_SETTINGS, getSavedAppearanceSettings } from '../services/appearanceSettings'
 
 const parentPath = ref('')
 const folderName = ref('MediaLibrary')
@@ -12,6 +13,7 @@ const currentRoot = ref(getSavedLibraryRoot())
 const busy = ref(false)
 const errorMessage = ref('')
 const statusMessage = ref('')
+const appearance = ref(getSavedAppearanceSettings())
 const isDesktop = computed(() => isTauri())
 const previewRoot = computed(() => parentPath.value.trim() && folderName.value.trim() ? joinPath(parentPath.value.trim(), folderName.value.trim()) : currentRoot.value)
 const categories = [
@@ -19,6 +21,12 @@ const categories = [
   { title: 'Аниме', folder: 'Аниме', folders: ['Фото', 'Видео', 'Архивы'] },
   { title: '3D', folder: '3D', folders: ['Фото', 'Видео', 'Архивы'] },
 ]
+
+watch(appearance, (value) => applyAppearanceSettings(value), { deep: true, flush: 'sync' })
+
+function resetAppearance() {
+  appearance.value = { ...DEFAULT_APPEARANCE_SETTINGS }
+}
 
 onMounted(async () => {
   currentRoot.value = await loadLibraryRoot()
@@ -74,7 +82,7 @@ async function createLibrary() {
 </script>
 
 <template>
-  <PageIntro title="Настройки хранилища" eyebrow="WORKSPACE / PREFERENCES" icon="⚙" description="Выбери место, где будет жить твоя медиатека. Папка библиотеки находится отдельно от программы и не удаляется при обновлении или удалении приложения." />
+  <PageIntro title="Настройки" eyebrow="WORKSPACE / PREFERENCES" icon="⚙" description="Настрой место хранения медиатеки, акцентный цвет и масштаб интерфейса. Настройки внешнего вида сохраняются автоматически." />
 
   <div class="settings-layout">
     <section class="panel settings-panel">
@@ -133,6 +141,51 @@ async function createLibrary() {
       <p class="panel-subtitle" style="margin-top:15px">В каждой категории будут подпапки «Фото», «Видео» и «Архивы». В будущем автора можно учитывать как тег типа <code>creator</code>; отдельную страницу авторов пока не добавляем.</p>
     </section>
   </div>
+
+  <section class="panel settings-appearance-panel">
+    <div class="panel-heading">
+      <div>
+        <h2 class="panel-title">Внешний вид</h2>
+        <p class="panel-subtitle">Подстрой акцент и размер интерфейса под себя. Изменения применяются сразу.</p>
+      </div>
+      <span class="pill pill-accent">LIVE PREVIEW</span>
+    </div>
+
+    <div class="appearance-controls">
+      <div class="appearance-control">
+        <div class="appearance-control-heading">
+          <label for="accent-hue" class="appearance-control-title">Акцентный цвет</label>
+          <strong class="appearance-control-value">{{ appearance.accentHue }}°</strong>
+        </div>
+        <p class="appearance-control-hint">Меняет подсветку навигации, активные кнопки, рамки и другие элементы интерфейса.</p>
+        <input id="accent-hue" v-model.number="appearance.accentHue" class="appearance-slider appearance-hue-slider" type="range" min="0" max="360" step="1" aria-label="Оттенок акцентного цвета" />
+        <div class="appearance-slider-ends"><span>Красный</span><span>Жёлтый</span><span>Зелёный</span><span>Синий</span><span>Фиолетовый</span></div>
+      </div>
+
+      <div class="appearance-control">
+        <div class="appearance-control-heading">
+          <label for="interface-scale" class="appearance-control-title">Масштаб интерфейса</label>
+          <strong class="appearance-control-value">{{ appearance.scale }}%</strong>
+        </div>
+        <p class="appearance-control-hint">Увеличь элементы, если текст мелкий, или уменьши масштаб, чтобы поместить больше содержимого.</p>
+        <input id="interface-scale" v-model.number="appearance.scale" class="appearance-slider" type="range" min="80" max="120" step="5" aria-label="Масштаб интерфейса в процентах" />
+        <div class="appearance-scale-markers"><span>80% · Компактно</span><span>100% · Обычно</span><span>120% · Крупно</span></div>
+      </div>
+    </div>
+
+    <div class="appearance-preview">
+      <span class="appearance-preview-label">Предпросмотр акцента</span>
+      <div class="appearance-preview-samples">
+        <span class="appearance-preview-mark" aria-hidden="true">✓</span>
+        <button type="button" class="btn btn-primary">Акцентная кнопка</button>
+        <span class="pill pill-accent">Выбрано</span>
+      </div>
+    </div>
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-top:13px">
+      <p class="panel-subtitle" style="margin:0">Цвет и масштаб сохраняются автоматически на этом устройстве.</p>
+      <button type="button" class="btn btn-secondary appearance-reset" style="margin-top:0" @click="resetAppearance">Сбросить внешний вид</button>
+    </div>
+  </section>
 
   <section v-if="currentRoot" class="panel" style="margin-top:15px;padding:17px">
     <div class="panel-heading">

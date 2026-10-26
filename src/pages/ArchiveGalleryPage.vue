@@ -44,7 +44,7 @@ const formats = [
 <style scoped>
 .archive-format-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-top: 20px; }
 .archive-format-card { display: flex; align-items: center; gap: 11px; padding: 13px; border: 1px solid #2b3645; border-radius: 8px; background: #111720; }
-.archive-format-icon { display: grid; width: 35px; height: 35px; flex: 0 0 35px; place-items: center; color: #b9e87d; border: 1px solid #3a4a2e; border-radius: 8px; background: #a3e6350b; font-size: 15px; }
+.archive-format-icon { display: grid; width: 35px; height: 35px; flex: 0 0 35px; place-items: center; color: var(--accent-strong); border: 1px solid color-mix(in srgb, var(--accent) 22%, #111720); border-radius: 8px; background: var(--accent-alpha-4); font-size: 15px; }
 .archive-format-card strong { display: block; color: #e0e8f2; font-size: 11px; }
 .archive-format-card span { display: block; margin-top: 5px; color: #7f8da0; font-size: 9px; line-height: 1.5; }
 @media (max-width: 900px) { .archive-format-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
