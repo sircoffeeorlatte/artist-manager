@@ -3,11 +3,13 @@ import { computed, onMounted, onBeforeUnmount, ref, watch } from 'vue'
 import { convertFileSrc, isTauri } from '@tauri-apps/api/core'
 import PageIntro from '../common/PageIntro.vue'
 import MediaViewer from './MediaViewer.vue'
+import GalleryImportPanel from './GalleryImportPanel.vue'
+import MediaGridView from './MediaGridView.vue'
+import TikTokGalleryView from './TikTokGalleryView.vue'
 import { selectSourceFiles } from '../../services/nativeDialogs'
 import { getSavedLibraryRoot, loadLibraryRoot } from '../../services/librarySettings'
 import { importMediaFiles, listLibraryMedia } from '../../services/filesystem'
-import { CATEGORY_LABELS, CATEGORY_OPTIONS, type ContentCategory, type ImportResult, type LibraryMediaItem } from '../../types/media'
-import { formatBytes } from '../../services/formatters'
+import { CATEGORY_LABELS, type ContentCategory, type ImportResult, type LibraryMediaItem } from '../../types/media'
 
 const props = defineProps<{
   kind: 'photo' | 'video'
@@ -17,6 +19,8 @@ const props = defineProps<{
 
 const items = ref<LibraryMediaItem[]>([])
 const columns = ref(3)
+const galleryMode = ref<'grid' | 'tiktok'>('grid')
+const gridSizes = [2, 3, 4, 5, 6, 7]
 const categoryFilter = ref<'all' | ContentCategory>('all')
 const destinationCategory = ref<ContentCategory>('irl')
 const importMode = ref<'copy' | 'move'>('copy')
@@ -129,8 +133,12 @@ async function addFiles() {
   }
 }
 
-function openViewer(index: number) { viewerIndex.value = index }
+function openViewer(index: number) {
+  document.querySelectorAll<HTMLVideoElement>('.media-card video').forEach((video) => video.pause())
+  viewerIndex.value = index
+}
 function closeViewer() { viewerIndex.value = null }
+
 function onDrop(event: DragEvent) {
   event.preventDefault()
   if (!isDesktop.value && event.dataTransfer?.files.length) addBrowserPreview(event.dataTransfer.files)
@@ -139,89 +147,91 @@ function onDragOver(event: DragEvent) { event.preventDefault() }
 
 watch(() => props.kind, () => { void reloadItems() })
 onMounted(() => { void reloadItems() })
-onBeforeUnmount(() => { for (const url of previewUrls) URL.revokeObjectURL(url) })
+onBeforeUnmount(() => {
+  for (const url of previewUrls) URL.revokeObjectURL(url)
+})
 </script>
 
 <template>
-  <div @drop="onDrop" @dragover="onDragOver">
-    <PageIntro :title="title" :description="description" />
+  <div class="gallery-page" :class="{ 'is-tiktok-mode': props.kind === 'video' && galleryMode === 'tiktok' }" @drop="onDrop" @dragover="onDragOver">
+    <PageIntro
+      v-if="galleryMode === 'grid'"
+      :title="title"
+      :description="description"
+      :eyebrow="props.kind === 'photo' ? 'LIBRARY / IMAGES' : 'LIBRARY / VIDEO'"
+      :icon="props.kind === 'photo' ? '▧' : '▶'"
+    />
 
-    <section class="mb-5 rounded-xl border border-slate-200 bg-white p-4">
-      <div class="flex flex-wrap items-end justify-between gap-4">
-        <div class="grid flex-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          <label class="block">
-            <span class="mb-1.5 block text-xs font-medium text-slate-600">Категория для загрузки</span>
-            <select v-model="destinationCategory" class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm">
-              <option v-for="category in CATEGORY_OPTIONS" :key="category.value" :value="category.value">{{ category.label }}</option>
-            </select>
-          </label>
-          <label class="block">
-            <span class="mb-1.5 block text-xs font-medium text-slate-600">Показывать категорию</span>
-            <select v-model="categoryFilter" class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm">
-              <option value="all">Все категории</option>
-              <option v-for="category in CATEGORY_OPTIONS" :key="category.value" :value="category.value">{{ category.label }}</option>
-            </select>
-          </label>
-          <label v-if="isDesktop" class="block">
-            <span class="mb-1.5 block text-xs font-medium text-slate-600">Импортировать как</span>
-            <select v-model="importMode" class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm">
-              <option value="copy">Копировать (оригинал останется)</option>
-              <option value="move">Переместить (удалить оригинал после проверки)</option>
-            </select>
-          </label>
-        </div>
-        <button type="button" class="inline-flex items-center justify-center rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-700 disabled:cursor-wait disabled:opacity-60" :disabled="busy" @click="addFiles">
-          {{ busy ? 'Загрузка…' : (props.kind === 'photo' ? '+ Добавить фото' : '+ Добавить видео') }}
-        </button>
+    <GalleryImportPanel
+      v-if="galleryMode === 'grid'"
+      :kind="props.kind"
+      :is-desktop="isDesktop"
+      :destination-category="destinationCategory"
+      :category-filter="categoryFilter"
+      :import-mode="importMode"
+      :busy="busy"
+      @update:destination-category="destinationCategory = $event"
+      @update:category-filter="categoryFilter = $event"
+      @update:import-mode="importMode = $event"
+      @add-files="addFiles"
+    />
+    <input ref="browserFileInput" class="hidden" type="file" multiple :accept="acceptedExtensions" @change="onBrowserFilesChange" />
+
+    <div v-if="galleryMode === 'grid' && message" class="notice notice-success" style="margin-top: 12px">{{ message }}</div>
+    <div v-if="galleryMode === 'grid' && errorMessage" class="notice notice-error" style="margin-top: 12px; white-space: pre-line">{{ errorMessage }}</div>
+
+    <div class="gallery-toolbar">
+      <div class="gallery-toolbar-left">
+        <span class="gallery-toolbar-count">{{ loading ? 'Сканирование…' : `${filteredItems.length} файлов` }}</span>
+        <span class="gallery-toolbar-hint">{{ categoryFilter === 'all' ? 'Все категории' : CATEGORY_LABELS[categoryFilter] }}</span>
       </div>
-      <input ref="browserFileInput" class="hidden" type="file" multiple :accept="acceptedExtensions" @change="onBrowserFilesChange" />
-      <p class="mt-3 text-xs leading-5 text-slate-500">
-        <template v-if="isDesktop">Файлы попадут в папку категории «{{ CATEGORY_LABELS[destinationCategory] }}». При перемещении оригинал удаляется только после успешного копирования и проверки размера.</template>
-        <template v-else>Браузерный режим: выбери файлы или перетащи их сюда, чтобы проверить сетку и просмотрщик. Файлы останутся временными и на диск медиатеки не записываются.</template>
-      </p>
-    </section>
-
-    <div v-if="message" class="mb-3 whitespace-pre-line rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">{{ message }}</div>
-    <div v-if="errorMessage" class="mb-3 whitespace-pre-line rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900">{{ errorMessage }}</div>
-
-    <div class="mb-3 flex flex-wrap items-center justify-between gap-3">
-      <p class="text-sm text-slate-600">{{ loading ? 'Сканирование медиатеки…' : `Файлов: ${filteredItems.length}` }}</p>
-      <div class="flex items-center gap-2 text-sm">
-        <label for="grid-columns" class="text-slate-500">Сетка</label>
-        <select id="grid-columns" v-model.number="columns" class="rounded-lg border border-slate-300 bg-white px-2.5 py-1.5">
-          <option :value="2">2 колонки</option>
-          <option :value="3">3 колонки</option>
-          <option :value="4">4 колонки</option>
-          <option :value="5">5 колонок</option>
-          <option :value="6">6 колонок</option>
-        </select>
-        <button type="button" class="rounded-lg border border-slate-300 px-3 py-1.5 text-slate-700 hover:bg-white" @click="reloadItems">Обновить</button>
+      <div class="gallery-toolbar-actions">
+        <div v-if="props.kind === 'video'" class="gallery-mode-switch" role="group" aria-label="Режим галереи">
+          <button type="button" class="gallery-mode-button" :class="{ 'is-active': galleryMode === 'grid' }" :aria-pressed="galleryMode === 'grid'" @click="galleryMode = 'grid'">Сетка</button>
+          <button type="button" class="gallery-mode-button" :class="{ 'is-active': galleryMode === 'tiktok' }" :aria-pressed="galleryMode === 'tiktok'" @click="galleryMode = 'tiktok'">TikTok</button>
+        </div>
+        <div v-if="galleryMode === 'grid'" class="gallery-density" role="group" aria-label="Размер сетки">
+          <button
+            v-for="size in gridSizes"
+            :key="size"
+            type="button"
+            class="gallery-density-button"
+            :class="{ 'is-active': columns === size }"
+            :aria-pressed="columns === size"
+            :aria-label="`Сетка ${size} на ${size}`"
+            :title="`Сетка ${size} × ${size}`"
+            @click="columns = size"
+          >{{ size }}×{{ size }}</button>
+        </div>
+        <button type="button" class="btn btn-secondary gallery-refresh-button" :disabled="loading" aria-label="Обновить галерею" title="Обновить галерею" @click="reloadItems"><span aria-hidden="true">↻</span></button>
       </div>
     </div>
 
-    <section v-if="filteredItems.length" class="grid gap-3" :style="{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }">
-      <button v-for="(item, index) in filteredItems" :key="item.id" type="button" class="group min-w-0 overflow-hidden rounded-xl border border-slate-200 bg-white text-left transition hover:-translate-y-0.5 hover:border-slate-400 hover:shadow-sm" @click="openViewer(index)">
-        <div class="relative flex aspect-[4/3] items-center justify-center overflow-hidden bg-slate-100">
-          <img v-if="props.kind === 'photo' || item.extension === '.gif'" :src="sourceFor(item)" :alt="item.originalName" class="h-full w-full object-contain" loading="lazy" />
-          <video v-else :src="sourceFor(item)" class="h-full w-full object-contain" preload="metadata" muted playsinline />
-          <span v-if="props.kind === 'video'" class="absolute bottom-2 right-2 rounded bg-black/70 px-2 py-1 text-[10px] font-semibold uppercase text-white">{{ item.extension === '.gif' ? 'GIF' : 'VIDEO' }}</span>
-          <span v-if="item.previewOnly" class="absolute left-2 top-2 rounded bg-amber-100 px-2 py-1 text-[10px] font-semibold text-amber-900">Временное превью</span>
-        </div>
-        <div class="p-3">
-          <p class="truncate text-sm font-medium text-slate-900" :title="item.originalName">{{ item.originalName }}</p>
-          <p class="mt-1 flex flex-wrap gap-x-2 text-xs text-slate-500"><span>{{ formatBytes(item.sizeBytes) }}</span><span>{{ item.category ? CATEGORY_LABELS[item.category] : 'Без категории' }}</span></p>
-          <p class="mt-2 truncate text-[11px] text-slate-400" :title="item.relativePath">{{ item.relativePath }}</p>
-        </div>
-      </button>
-    </section>
+    <TikTokGalleryView
+      v-if="props.kind === 'video'"
+      v-show="galleryMode === 'tiktok'"
+      :items="filteredItems"
+      :source-for="sourceFor"
+      :category-labels="CATEGORY_LABELS"
+      :active="galleryMode === 'tiktok' && viewerIndex === null"
+      @open="openViewer"
+    />
 
-    <section v-else class="rounded-xl border border-dashed border-slate-300 bg-white px-5 py-16 text-center">
-      <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-xl text-slate-500">{{ props.kind === 'photo' ? 'IMG' : 'VID' }}</div>
-      <h2 class="mt-4 text-base font-semibold text-slate-900">{{ loading ? 'Загружаем файлы…' : 'Пока здесь пусто' }}</h2>
-      <p class="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-500">
-        {{ isDesktop ? (rootPath ? 'Добавь файлы кнопкой выше. Галерея будет сканировать папки выбранной медиатеки.' : 'Сначала открой «Настройки», выбери место и создай папку медиатеки.') : 'Добавь локальные файлы кнопкой выше — они появятся только для проверки интерфейса в браузере.' }}
-      </p>
-      <button v-if="!isDesktop" type="button" class="mt-4 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white" @click="addFiles">Выбрать файлы для превью</button>
+    <MediaGridView
+      v-if="galleryMode === 'grid' && filteredItems.length"
+      :items="filteredItems"
+      :kind="props.kind"
+      :columns="columns"
+      :source-for="sourceFor"
+      :title="title"
+      @open="openViewer"
+    />
+
+    <section v-if="galleryMode === 'grid' && !filteredItems.length" class="gallery-empty">
+      <div class="gallery-empty-icon">{{ props.kind === 'photo' ? '▧' : '▶' }}</div>
+      <h2>{{ loading ? 'Сканируем медиатеку…' : (categoryFilter === 'all' ? 'Здесь пока пусто' : `В категории «${CATEGORY_LABELS[categoryFilter]}» пока нет файлов`) }}</h2>
+      <p>{{ isDesktop ? (rootPath ? 'Добавь файлы с помощью кнопки выше. Медиатека просканирует папки выбранного хранилища.' : 'Сначала зайди в настройки, выбери диск и создай корневую папку медиатеки.') : 'Выбери файлы для временного предпросмотра — они появятся в сетке, но не будут скопированы на диск.' }}</p>
+      <button v-if="!isDesktop" type="button" class="btn btn-primary" style="margin-top:16px" @click="addFiles">Выбрать файлы</button>
     </section>
 
     <MediaViewer v-if="viewerIndex !== null" :items="filteredItems" :initial-index="viewerIndex ?? 0" :media-kind="props.kind" @close="closeViewer" />

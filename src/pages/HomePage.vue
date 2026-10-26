@@ -1,65 +1,61 @@
 <script setup lang="ts">
 import { RouterLink } from 'vue-router'
-import PageIntro from '../components/common/PageIntro.vue'
 
 const sections = [
-  { title: 'Галерея видео', to: '/gallery/videos', description: 'Импорт видео и GIF, сетка файлов, встроенный просмотрщик и управление звуком.', marker: 'VID' },
-  { title: 'Галерея фото', to: '/gallery/photos', description: 'Импорт изображений, сетка 2–6 колонок и просмотр с масштабированием колёсиком.', marker: 'IMG' },
-  { title: 'Галерея архивов', to: '/gallery/archives', description: 'Каталог ZIP, 7z, RAR и других архивов без встроенной распаковки на MVP-этапе.', marker: 'ARC' },
-  { title: 'База данных файлов', to: '/database', description: 'Предварительный вид таблицы файлов. Подключение SQLite будет следующим этапом.', marker: 'DB' },
-  { title: 'Настройки', to: '/settings', description: 'Выбрать место хранения и создать структуру папок IRL / Аниме / 3D.', marker: 'CFG' },
+  { title: 'Галерея видео', to: '/gallery/videos', description: 'Видео и GIF в одной библиотеке. Импортируй файлы и выбирай удобную плотность сетки.', marker: '▶', hint: 'MP4 · WEBM · GIF', eyebrow: '01 / ВИДЕО' },
+  { title: 'Галерея фото', to: '/gallery/photos', description: 'Собирай изображения в одном месте и просматривай их в настраиваемой сетке.', marker: '▧', hint: 'JPG · PNG · WEBP', eyebrow: '02 / ИЗОБРАЖЕНИЯ' },
+  { title: 'Галерея архивов', to: '/gallery/archives', description: 'Отдельный каталог сжатых файлов и пакетов, без смешивания с медиа.', marker: '▤', hint: 'ZIP · 7Z · RAR', eyebrow: '03 / АРХИВЫ' },
+  { title: 'База файлов', to: '/database', description: 'Табличный взгляд на коллекцию: пути, размеры, категории и теги.', marker: '⌘', hint: 'ПОИСК И ФИЛЬТРЫ', eyebrow: '04 / КАТАЛОГ' },
+  { title: 'Настройки хранилища', to: '/settings', description: 'Выбери диск и создай понятную структуру папок IRL, Аниме и 3D.', marker: '⚙', hint: 'ПУТЬ И СТРУКТУРА', eyebrow: '05 / НАСТРОЙКИ' },
 ]
 </script>
 
 <template>
-  <PageIntro
-    title="Локальная медиатека — рабочий MVP-каркас"
-    description="Выбери папку хранилища в настройках, затем добавляй фотографии и видео. В Desktop-режиме приложение копирует или перемещает файлы в свою структуру папок; в браузерном режиме можно временно проверить сетку и просмотрщик."
-  />
-
-  <section class="mb-6 grid gap-3 sm:grid-cols-3">
-    <div class="rounded-xl border border-slate-200 bg-white p-4">
-      <p class="text-sm text-slate-500">Целевая платформа</p>
-      <p class="mt-2 text-lg font-semibold">Windows 10 / 11</p>
-      <p class="mt-1 text-xs text-slate-500">64-bit · Tauri 2</p>
+  <section class="home-hero">
+    <div class="home-hero-copy">
+      <div class="page-eyebrow">ТВОЯ КОЛЛЕКЦИЯ · ТОЛЬКО ЛОКАЛЬНО</div>
+      <h2>Весь твой контент.<br /><span>В одном месте.</span></h2>
+      <p>Личная медиатека для фото, видео и архивов. Без облака и обязательной регистрации — файлы лежат там, где ты сам выберешь.</p>
+      <div class="home-hero-actions">
+        <RouterLink to="/gallery/photos" class="btn btn-primary"><span aria-hidden="true">▧</span> Открыть галерею</RouterLink>
+        <RouterLink to="/settings" class="btn btn-secondary">Настроить хранилище <span aria-hidden="true">↗</span></RouterLink>
+      </div>
     </div>
-    <div class="rounded-xl border border-slate-200 bg-white p-4">
-      <p class="text-sm text-slate-500">Контент</p>
-      <p class="mt-2 text-lg font-semibold">3 типа файлов</p>
-      <p class="mt-1 text-xs text-slate-500">Видео · Фото · Архивы</p>
-    </div>
-    <div class="rounded-xl border border-slate-200 bg-white p-4">
-      <p class="text-sm text-slate-500">Категории</p>
-      <p class="mt-2 text-lg font-semibold">3 категории</p>
-      <p class="mt-1 text-xs text-slate-500">3D · Аниме · IRL плюс теги</p>
+    <div class="home-hero-art" aria-hidden="true">
+      <div class="media-orbit">
+        <div class="orbit-core">ML</div>
+        <div class="orbit-tile tile-one">▧</div>
+        <div class="orbit-tile tile-two">▶</div>
+        <div class="orbit-tile tile-three">▤</div>
+      </div>
     </div>
   </section>
 
-  <div class="mb-3 flex items-center justify-between gap-3">
-    <h3 class="text-base font-semibold">Разделы приложения</h3>
-    <span class="text-xs text-slate-500">Выбери страницу</span>
+  <section class="home-stats" aria-label="Состав медиатеки">
+    <div class="home-stat"><div class="home-stat-icon">▣</div><div><strong>3 раздела</strong><span>Фото, видео и архивы</span></div></div>
+    <div class="home-stat"><div class="home-stat-icon">◫</div><div><strong>3 категории</strong><span>IRL · Аниме · 3D</span></div></div>
+    <div class="home-stat"><div class="home-stat-icon">⌂</div><div><strong>На твоём диске</strong><span>Расположение выбираешь ты</span></div></div>
+  </section>
+
+  <div class="section-heading">
+    <div><h3>Рабочее пространство</h3><p>Выбери, чем займёмся сейчас</p></div>
+    <span class="pill">5 РАЗДЕЛОВ</span>
   </div>
-  <section class="grid gap-3 sm:grid-cols-2" aria-label="Страницы приложения">
-    <RouterLink
-      v-for="section in sections"
-      :key="section.to"
-      :to="section.to"
-      class="group rounded-xl border border-slate-200 bg-white p-5 no-underline transition-colors hover:border-slate-400 hover:bg-slate-50"
-    >
-      <div class="flex items-start justify-between gap-4">
-        <div class="flex h-10 w-12 items-center justify-center rounded-md bg-slate-100 text-xs font-bold tracking-wide text-slate-600 group-hover:bg-white">{{ section.marker }}</div>
-        <span class="text-lg text-slate-400 transition-transform group-hover:translate-x-1" aria-hidden="true">→</span>
+
+  <section class="section-card-grid" aria-label="Страницы приложения">
+    <RouterLink v-for="section in sections" :key="section.to" :to="section.to" class="section-card">
+      <div class="section-card-top">
+        <div class="section-card-icon">{{ section.marker }}</div>
+        <span class="section-card-arrow" aria-hidden="true">↗</span>
       </div>
-      <h4 class="mt-4 font-semibold text-slate-900">{{ section.title }}</h4>
-      <p class="mt-2 text-sm leading-6 text-slate-600">{{ section.description }}</p>
-      <span class="mt-4 inline-block text-sm font-medium text-slate-700">Открыть раздел →</span>
+      <div class="eyebrow" style="margin-top: 16px">{{ section.eyebrow }}</div>
+      <h4>{{ section.title }}</h4>
+      <p>{{ section.description }}</p>
+      <span class="section-card-link">{{ section.hint }} <span aria-hidden="true">→</span></span>
     </RouterLink>
   </section>
 
-  <section class="mt-6 rounded-xl border border-amber-200 bg-amber-50 p-4">
-    <h3 class="text-sm font-semibold text-amber-950">Что пока не реализовано</h3>
-    <p class="mt-1 text-sm leading-6 text-amber-900">
-      Пока не подключены SQLite-индексация, извлечение EXIF и технических метаданных видео, редактирование тегов, авторы, генерация миниатюр и автоматические обновления.
-    </p>
-  </section>
+  <div class="notice notice-warning" style="margin-top: 17px">
+    <strong style="color: #f2d69a">Статус MVP.</strong> Сейчас это ранняя версия интерфейса: таблица базы использует демонстрационные записи, а полноценная индексация SQLite, миниатюры и редактирование тегов ещё впереди.
+  </div>
 </template>

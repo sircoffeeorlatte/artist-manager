@@ -5,6 +5,7 @@ import { openPath } from '@tauri-apps/plugin-opener'
 import type { LibraryMediaItem } from '../../types/media'
 import { CATEGORY_LABELS } from '../../types/media'
 import { formatBytes, formatDate } from '../../services/formatters'
+import LibraryVideoPlayer from './LibraryVideoPlayer.vue'
 
 const props = defineProps<{
   items: LibraryMediaItem[]
@@ -20,18 +21,11 @@ const volume = ref(1)
 const muted = ref(false)
 const playbackError = ref(false)
 const externalOpenError = ref('')
-const videoElement = ref<HTMLVideoElement | null>(null)
 const current = computed(() => props.items[currentIndex.value])
 const isGif = computed(() => current.value?.extension.toLowerCase() === '.gif')
 
 watch(() => props.initialIndex, (index) => { currentIndex.value = index; zoom.value = 1 })
 watch(currentIndex, () => { zoom.value = 1; playbackError.value = false; externalOpenError.value = '' })
-watch([volume, muted, current], () => {
-  if (!videoElement.value) return
-  videoElement.value.volume = volume.value
-  videoElement.value.muted = muted.value
-})
-
 function sourceFor(item: LibraryMediaItem): string {
   if (item.previewOnly || item.absolutePath.startsWith('blob:')) return item.absolutePath
   return isTauri() ? convertFileSrc(item.absolutePath) : ''
@@ -41,16 +35,13 @@ function next(step: number) {
   currentIndex.value = (currentIndex.value + step + props.items.length) % props.items.length
 }
 function handleVideoError() { playbackError.value = true }
+function updatePlayerVolume(value: number) { volume.value = value }
+function updatePlayerMuted(value: boolean) { muted.value = value }
 async function openExternally() {
   if (!current.value || !isTauri()) return
   externalOpenError.value = ''
   try { await openPath(current.value.absolutePath) }
   catch (error) { externalOpenError.value = error instanceof Error ? error.message : String(error) }
-}
-function applyVideoSettings() {
-  if (!videoElement.value) return
-  videoElement.value.volume = volume.value
-  videoElement.value.muted = muted.value
 }
 function onWheel(event: WheelEvent) {
   if (props.mediaKind !== 'photo') return
@@ -97,17 +88,16 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
             <button v-if="isTauri()" type="button" class="mt-4 rounded-lg bg-white px-4 py-2 text-sm font-semibold text-slate-900 hover:bg-slate-200" @click="openExternally">Открыть внешним плеером</button>
             <p v-if="externalOpenError" class="mt-2 break-words text-xs text-rose-300">{{ externalOpenError }}</p>
           </div>
-          <video
+          <LibraryVideoPlayer
             v-else-if="mediaKind === 'video' && !isGif"
-            ref="videoElement"
             :key="current.id"
             :src="sourceFor(current)"
-            class="max-h-full max-w-full"
-            controls
+            :volume="volume"
+            :muted="muted"
             autoplay
-            playsinline
-            @loadedmetadata="applyVideoSettings"
             @error="handleVideoError"
+            @volume-change="updatePlayerVolume"
+            @muted-change="updatePlayerMuted"
           />
         </div>
         <button type="button" aria-label="Следующий файл" class="w-12 shrink-0 text-3xl text-slate-300 hover:bg-white/5 md:w-16" @click="next(1)">›</button>

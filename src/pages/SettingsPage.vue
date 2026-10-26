@@ -74,62 +74,71 @@ async function createLibrary() {
 </script>
 
 <template>
-  <PageIntro title="Настройки" description="Выбери место на диске для медиатеки. Приложение создаст папку-хранилище с категориями и подкаталогами; при обновлении или удалении приложения эта папка не удаляется." />
+  <PageIntro title="Настройки хранилища" eyebrow="WORKSPACE / PREFERENCES" icon="⚙" description="Выбери место, где будет жить твоя медиатека. Папка библиотеки находится отдельно от программы и не удаляется при обновлении или удалении приложения." />
 
-  <section class="rounded-xl border border-slate-200 bg-white p-5">
-    <div class="flex flex-wrap items-start justify-between gap-3">
-      <div>
-        <h2 class="font-semibold text-slate-900">Расположение медиатеки</h2>
-        <p class="mt-1 max-w-2xl text-sm leading-6 text-slate-500">Например, можно выбрать диск D: и создать там папку <code class="rounded bg-slate-100 px-1.5 py-0.5">MediaLibrary</code>. Это отдельное хранилище, не папка установки программы.</p>
+  <div class="settings-layout">
+    <section class="panel settings-panel">
+      <div class="panel-heading">
+        <div><h2 class="panel-title">Расположение медиатеки</h2><p class="panel-subtitle">Укажи папку-родитель и имя отдельного хранилища.</p></div>
+        <span class="pill" :class="isDesktop ? 'pill-accent' : ''"><span v-if="isDesktop" class="status-light"></span>{{ isDesktop ? 'TAURI DESKTOP' : 'БРАУЗЕРНЫЙ РЕЖИМ' }}</span>
       </div>
-      <span class="rounded-full px-2.5 py-1 text-xs font-medium" :class="isDesktop ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-800'">{{ isDesktop ? 'Desktop Tauri' : 'Браузерный режим' }}</span>
-    </div>
 
-    <div v-if="!isDesktop" class="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm leading-6 text-amber-900">В браузере можно проверить интерфейс, но браузер не может создавать произвольные папки на дисках. Запусти <code>run-desktop.cmd</code>, чтобы выбрать путь через системный диалог Windows.</div>
+      <div v-if="!isDesktop" class="notice notice-warning" style="margin-top:16px">В браузере можно осмотреть интерфейс, но создавать папки на дисках Windows нельзя. Для выбора пути запусти настольную версию через <code>run-desktop.cmd</code>.</div>
 
-    <div class="mt-5 grid gap-4 md:grid-cols-[minmax(0,1fr)_220px]">
-      <label class="block">
-        <span class="mb-1.5 block text-xs font-medium text-slate-600">Папка, внутри которой создать хранилище</span>
-        <div class="flex gap-2">
-          <input v-model="parentPath" class="min-w-0 flex-1 rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm" placeholder="Например: D:\\" readonly />
-          <button type="button" class="shrink-0 rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50" :disabled="!isDesktop || busy" @click="chooseParent">Выбрать…</button>
+      <div style="margin-top:21px">
+        <label>
+          <span class="field-label">Где создать папку хранилища</span>
+          <div style="display:flex;gap:8px">
+            <input v-model="parentPath" class="field-control" placeholder="Например, D:\Media" readonly />
+            <button type="button" class="btn btn-secondary" style="flex-shrink:0" :disabled="!isDesktop || busy" @click="chooseParent">Выбрать…</button>
+          </div>
+        </label>
+        <label style="display:block;margin-top:15px">
+          <span class="field-label">Имя корневой папки</span>
+          <input v-model="folderName" class="field-control" placeholder="MediaLibrary" />
+        </label>
+      </div>
+
+      <div class="settings-path-preview">
+        <p>ПОЛНЫЙ ПУТЬ ХРАНИЛИЩА</p>
+        <strong>{{ previewRoot || 'Сначала выбери папку на диске' }}</strong>
+      </div>
+
+      <div style="display:flex;flex-wrap:wrap;gap:9px;margin-top:17px">
+        <button type="button" class="btn btn-primary" :disabled="busy || !isDesktop" @click="createLibrary"><span aria-hidden="true">{{ busy ? '…' : '＋' }}</span>{{ busy ? 'Создание папок…' : (currentRoot ? 'Создать / проверить структуру' : 'Создать медиатеку') }}</button>
+        <button v-if="currentRoot" type="button" class="btn btn-secondary" @click="parentPath = splitPath(currentRoot).parent; folderName = splitPath(currentRoot).name">Вернуть текущий путь</button>
+      </div>
+      <div v-if="statusMessage" class="notice notice-success" style="margin-top:14px;white-space:pre-line">{{ statusMessage }}</div>
+      <div v-if="errorMessage" class="notice notice-error" style="margin-top:14px;white-space:pre-line">{{ errorMessage }}</div>
+    </section>
+
+    <section class="panel settings-panel">
+      <div class="panel-heading">
+        <div><h2 class="panel-title">Структура папок</h2><p class="panel-subtitle">Папки создаются автоматически. Уже существующие файлы не удаляются.</p></div>
+      </div>
+      <div class="folder-tree" style="margin-top:17px">
+        <div class="folder-root">{{ folderName || 'MediaLibrary' }}/</div>
+        <div v-for="(category, categoryIndex) in categories" :key="category.folder">
+          <div class="folder-category">{{ categoryIndex === categories.length - 1 ? '└─' : '├─' }} {{ category.folder }}/</div>
+          <div v-for="(folder, index) in category.folders" :key="folder" class="folder-leaf" style="padding-left:18px">
+            {{ index === category.folders.length - 1 ? '└─' : '├─' }} {{ folder }}/
+          </div>
         </div>
-      </label>
-      <label class="block">
-        <span class="mb-1.5 block text-xs font-medium text-slate-600">Имя новой папки</span>
-        <input v-model="folderName" class="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm" placeholder="MediaLibrary" />
-      </label>
-    </div>
-
-    <div class="mt-4 rounded-lg bg-slate-50 p-3">
-      <p class="text-xs font-medium text-slate-500">Полный путь хранилища</p>
-      <p class="mt-1 break-all font-mono text-sm text-slate-800">{{ previewRoot || 'Сначала выбери место на диске' }}</p>
-    </div>
-
-    <div class="mt-4 flex flex-wrap items-center gap-3">
-      <button type="button" class="rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-700 disabled:cursor-wait disabled:opacity-60" :disabled="busy || !isDesktop" @click="createLibrary">{{ busy ? 'Создание папок…' : (currentRoot ? 'Создать / проверить структуру' : 'Создать папку медиатеки') }}</button>
-      <button v-if="currentRoot" type="button" class="rounded-lg border border-slate-300 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50" @click="parentPath = splitPath(currentRoot).parent; folderName = splitPath(currentRoot).name">Вернуться к текущему пути</button>
-    </div>
-    <div v-if="statusMessage" class="mt-4 whitespace-pre-line rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">{{ statusMessage }}</div>
-    <div v-if="errorMessage" class="mt-4 whitespace-pre-line rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900">{{ errorMessage }}</div>
-  </section>
-
-  <section class="mt-5 rounded-xl border border-slate-200 bg-white p-5">
-    <h2 class="font-semibold text-slate-900">Структура каталогов</h2>
-    <p class="mt-1 text-sm text-slate-500">Будет создана автоматически. Существующие каталоги и файлы не перезаписываются.</p>
-    <div class="mt-4 rounded-lg bg-slate-950 p-4 font-mono text-xs leading-6 text-slate-100 sm:text-sm">
-      <div>{{ folderName || 'MediaLibrary' }}/</div>
-      <div v-for="category in categories" :key="category.folder" class="pl-4">
-        <div>├─ {{ category.folder }}/</div>
-        <div v-for="(folder, index) in category.folders" :key="folder" class="pl-6" :class="index === category.folders.length - 1 ? 'text-emerald-300' : 'text-slate-300'">{{ index === category.folders.length - 1 ? '└─' : '├─' }} {{ folder }}/</div>
       </div>
-    </div>
-    <p class="mt-4 text-sm leading-6 text-slate-600">Внутри каждой категории будут папки «Фото», «Видео» и «Архивы». Автор фотографии в будущем будет задаваться тегом типа <code>creator</code>; страницу авторов и интерфейс тегов пока не делаем.</p>
-  </section>
+      <div class="category-preview-grid">
+        <div class="category-preview"><strong>IRL</strong><span>Реальные фото и видео</span></div>
+        <div class="category-preview"><strong>Аниме</strong><span>Анимация и связанные медиа</span></div>
+        <div class="category-preview"><strong>3D</strong><span>Рендеры и 3D-контент</span></div>
+      </div>
+      <p class="panel-subtitle" style="margin-top:15px">В каждой категории будут подпапки «Фото», «Видео» и «Архивы». В будущем автора можно учитывать как тег типа <code>creator</code>; отдельную страницу авторов пока не добавляем.</p>
+    </section>
+  </div>
 
-  <section v-if="currentRoot" class="mt-5 rounded-xl border border-slate-200 bg-white p-5">
-    <h2 class="font-semibold">Текущее хранилище</h2>
-    <p class="mt-2 break-all font-mono text-sm text-slate-700">{{ currentRoot }}</p>
-    <p class="mt-2 text-xs leading-5 text-slate-500">Программа не удаляет эту папку при обновлении или деинсталляции. Пока используется файловый сканер; полноценная индексация в SQLite будет добавлена отдельно.</p>
+  <section v-if="currentRoot" class="panel" style="margin-top:15px;padding:17px">
+    <div class="panel-heading">
+      <div><h2 class="panel-title">Текущее хранилище</h2><p class="panel-subtitle">Сохранённый путь, который приложение использует для работы с файлами.</p></div>
+      <span class="pill pill-accent">НАСТРОЕНО</span>
+    </div>
+    <p style="margin:12px 0 0;color:#c8d5e4;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:11px;line-height:1.8;overflow-wrap:anywhere">{{ currentRoot }}</p>
   </section>
 </template>

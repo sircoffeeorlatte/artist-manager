@@ -10,7 +10,7 @@ export default defineConfig({
     port: 1420,
     strictPort: true,
     watch: {
-      // Исключаем папку src-tauri, чтобы Vite не трогал временные файлы Rust
+      // Исключаем Rust-часть Tauri из наблюдения Vite.
       ignored: ['**/src-tauri/**'],
     },
   },

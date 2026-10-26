@@ -8,59 +8,67 @@ const pageTitle = computed(() => String(route.meta.title ?? 'Локальная 
 const runtimeLabel = getRuntimeLabel()
 
 const navigation = [
-  { label: 'Главная', to: '/', short: 'Домой' },
-  { label: 'Галерея видео', to: '/gallery/videos', short: 'Видео' },
-  { label: 'Галерея фото', to: '/gallery/photos', short: 'Фото' },
-  { label: 'Галерея архивов', to: '/gallery/archives', short: 'Архивы' },
-  { label: 'База данных файлов', to: '/database', short: 'База данных' },
-  { label: 'Настройки', to: '/settings', short: 'Настройки' },
+  { label: 'Главная', to: '/', icon: '⌂', group: 'БИБЛИОТЕКА' },
+  { label: 'Видео', to: '/gallery/videos', icon: '▶', group: '' },
+  { label: 'Фото', to: '/gallery/photos', icon: '▧', group: '' },
+  { label: 'Архивы', to: '/gallery/archives', icon: '▤', group: '' },
+  { label: 'База файлов', to: '/database', icon: '⌘', group: 'ИНСТРУМЕНТЫ' },
+  { label: 'Настройки', to: '/settings', icon: '⚙', group: '' },
 ]
+
+function isActive(path: string) {
+  if (path === '/') return route.path === '/'
+  return route.path === path || route.path.startsWith(`${path}/`)
+}
 </script>
 
 <template>
-  <div class="min-h-screen bg-slate-50 text-slate-900">
-    <div class="min-h-screen md:grid md:grid-cols-[230px_minmax(0,1fr)]">
-      <aside class="border-b border-slate-200 bg-white p-4 md:min-h-screen md:border-b-0 md:border-r md:p-5">
-        <RouterLink to="/" class="mb-5 flex items-center gap-3 rounded-lg p-2 no-underline hover:bg-slate-50">
-          <span class="flex h-10 w-10 items-center justify-center rounded-lg bg-slate-900 text-sm font-bold text-white">ML</span>
-          <span>
-            <span class="block font-semibold text-slate-900">Media Library</span>
-            <span class="block text-xs text-slate-500">MVP · Windows</span>
-          </span>
-        </RouterLink>
+  <div class="app-shell">
+    <aside class="app-sidebar">
+      <RouterLink to="/" class="brand-lockup">
+        <span class="brand-mark" aria-hidden="true"><span></span><span></span><span></span><span></span></span>
+        <span class="brand-copy">
+          <strong>Media Library</strong>
+          <small>ЛИЧНОЕ ХРАНИЛИЩЕ</small>
+        </span>
+      </RouterLink>
 
-        <p class="mb-2 px-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Разделы</p>
-        <nav class="flex gap-1 overflow-x-auto md:flex-col" aria-label="Основная навигация">
-          <RouterLink
-            v-for="item in navigation"
-            :key="item.to"
-            :to="item.to"
-            class="shrink-0 rounded-lg px-3 py-2.5 text-sm no-underline transition-colors"
-            :class="route.path === item.to ? 'bg-slate-900 font-medium text-white' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'"
-          >
-            {{ item.label }}
+      <nav class="main-navigation" aria-label="Основная навигация">
+        <template v-for="item in navigation" :key="item.to">
+          <p v-if="item.group" class="nav-group-label">{{ item.group }}</p>
+          <RouterLink :to="item.to" class="nav-link" :class="{ 'is-active': isActive(item.to) }">
+            <span class="nav-icon" aria-hidden="true">{{ item.icon }}</span>
+            <span>{{ item.label }}</span>
+            <span v-if="isActive(item.to)" class="nav-active-dot" aria-hidden="true"></span>
           </RouterLink>
-        </nav>
+        </template>
+      </nav>
 
-        <div class="mt-6 rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs leading-5 text-slate-600">
-          <p class="font-semibold text-slate-800">Режим запуска</p>
-          <p class="mt-1">{{ runtimeLabel }}</p>
-          <p class="mt-2 text-slate-500">Настройка папки и импорт доступны в Desktop. SQLite-интеграция будет следующим этапом.</p>
-        </div>
-      </aside>
-
-      <div class="min-w-0">
-        <header class="border-b border-slate-200 bg-white px-5 py-4 md:px-8">
-          <p class="text-xs text-slate-500">Локальная медиатека / MVP</p>
-          <h1 class="mt-1 text-xl font-semibold tracking-tight">{{ pageTitle }}</h1>
-        </header>
-        <main class="mx-auto w-full max-w-[1440px] p-5 md:p-8">
-          <RouterView />
-        </main>
-        <footer class="border-t border-slate-200 px-5 py-4 text-xs text-slate-500 md:px-8">
-          MVP · Хранилище медиатеки находится отдельно от программы
-        </footer>
+      <div class="sidebar-spacer"></div>
+      <div class="storage-status">
+        <div class="status-heading"><span class="status-light"></span><span>РЕЖИМ РАБОТЫ</span></div>
+        <strong>{{ runtimeLabel }}</strong>
+        <p>Файлы остаются на твоём компьютере. Хранилище не зависит от папки установки программы.</p>
       </div>
+      <div class="sidebar-version"><span>MEDIA LIBRARY</span><span>PREVIEW · 0.2</span></div>
+    </aside>
+
+    <div class="app-main-column">
+      <header class="app-topbar">
+        <div class="topbar-location">
+          <span class="topbar-kicker">МЕДИАТЕКА</span>
+          <span class="topbar-separator">/</span>
+          <span class="topbar-current">{{ pageTitle }}</span>
+        </div>
+        <div class="topbar-status"><span class="status-light"></span>Локальное приложение</div>
+      </header>
+      <main class="app-content">
+        <RouterView />
+      </main>
+      <footer class="app-footer">
+        <span>Твои файлы. Твой компьютер. Твои правила.</span>
+        <span>Media Library · MVP</span>
+      </footer>
     </div>
   </div>
 </template>

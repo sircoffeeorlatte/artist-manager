@@ -1,13 +1,22 @@
 <script setup lang="ts">
-defineProps<{
+withDefaults(defineProps<{
   title: string
   description: string
-}>()
+  eyebrow?: string
+  icon?: string
+}>(), {
+  eyebrow: 'MEDIA LIBRARY / WORKSPACE',
+  icon: '◈',
+})
 </script>
 
 <template>
-  <div class="mb-6">
-    <h2 class="text-2xl font-semibold tracking-tight text-slate-900">{{ title }}</h2>
-    <p class="mt-2 max-w-3xl text-sm leading-6 text-slate-600">{{ description }}</p>
+  <div class="page-intro">
+    <div class="page-intro-copy">
+      <div class="page-eyebrow">{{ eyebrow }}</div>
+      <h1 class="page-title">{{ title }}</h1>
+      <p class="page-description">{{ description }}</p>
+    </div>
+    <div class="page-intro-mark" aria-hidden="true">{{ icon }}</div>
   </div>
 </template>
