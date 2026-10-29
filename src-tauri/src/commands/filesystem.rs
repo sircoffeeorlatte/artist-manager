@@ -1,8 +1,9 @@
 use serde::Serialize;
-use std::fs;
+use std::fs::{self, File, OpenOptions};
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
-use tauri::Manager;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use tauri::{Emitter, Manager};
 
 const CATEGORIES: [(&str, &str); 3] = [
     ("irl", "IRL"),
@@ -59,6 +60,7 @@ fn kind_folder(kind: &str) -> Result<&'static str, String> {
 
 fn ensure_structure(root: &Path) -> Result<(), String> {
     fs::create_dir_all(root).map_err(|error| format!("Не удалось создать папку медиатеки: {error}"))?;
+    fs::create_dir_all(root.join("wallpapers")).map_err(|error| format!("Не удалось создать каталог обоев {}: {error}", root.join("wallpapers").display()))?;
     for (_, category_name) in CATEGORIES {
         for (_, kind_name) in KINDS {
             fs::create_dir_all(root.join(category_name).join(kind_name))
@@ -145,6 +147,13 @@ pub fn create_library_structure(root_path: String) -> Result<String, String> {
 
 #[tauri::command]
 pub fn get_saved_library_root(app: tauri::AppHandle) -> Result<String, String> {
+    if let Some(config) = super::config::read_user_config_file(&app)? {
+        if !config.library_root.trim().is_empty() {
+            return Ok(config.library_root);
+        }
+    }
+
+    // Legacy fallback for builds which stored only library_root.txt.
     let settings_dir = app.path().app_local_data_dir()
         .map_err(|error| format!("Не удалось определить папку настроек приложения: {error}"))?;
     let settings_file = settings_dir.join("library_root.txt");
@@ -161,12 +170,16 @@ pub fn save_library_root(app: tauri::AppHandle, root_path: String) -> Result<(),
     if !root.is_dir() {
         return Err("Нельзя сохранить путь: папка медиатеки не существует.".into());
     }
+
+    super::config::update_library_root_config(&app, root.to_string_lossy().to_string())?;
+
+    // Keep the legacy file updated for compatibility with an older build rolled back by the user.
     let settings_dir = app.path().app_local_data_dir()
         .map_err(|error| format!("Не удалось определить папку настроек приложения: {error}"))?;
     fs::create_dir_all(&settings_dir)
         .map_err(|error| format!("Не удалось создать папку настроек приложения: {error}"))?;
     fs::write(settings_dir.join("library_root.txt"), root.to_string_lossy().as_bytes())
-        .map_err(|error| format!("Не удалось сохранить путь медиатеки: {error}"))
+        .map_err(|error| format!("Не удалось обновить резервный путь медиатеки: {error}"))
 }
 
 #[tauri::command]
@@ -178,15 +191,125 @@ pub fn register_library_root(app: tauri::AppHandle, root_path: String) -> Result
     Ok(())
 }
 
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportProgress {
+    operation_id: String,
+    overall_percent: u8,
+    file_index: usize,
+    total_files: usize,
+    current_file: String,
+    bytes_copied: u64,
+    file_size: u64,
+    completed_files: usize,
+    file_succeeded: Option<bool>,
+    status: String,
+}
+
+fn progress_percent(completed_bytes: u64, total_bytes: u64, completed_files: usize, total_files: usize) -> u8 {
+    if total_files == 0 {
+        return 100;
+    }
+    if total_bytes > 0 {
+        return ((completed_bytes as f64 / total_bytes as f64) * 100.0).floor().clamp(0.0, 100.0) as u8;
+    }
+    ((completed_files as f64 / total_files as f64) * 100.0).floor().clamp(0.0, 100.0) as u8
+}
+
+fn emit_import_progress(app: &tauri::AppHandle, progress: &ImportProgress) {
+    let _ = app.emit("import-progress", progress);
+}
+
+fn copy_file_with_progress(
+    app: &tauri::AppHandle,
+    operation_id: &str,
+    source: &Path,
+    temporary_destination: &Path,
+    file_size: u64,
+    completed_bytes_before: u64,
+    total_bytes: u64,
+    file_index: usize,
+    total_files: usize,
+    current_file: &str,
+    completed_files: usize,
+) -> std::io::Result<u64> {
+    let mut input = File::open(source)?;
+    // A unique hidden staging file keeps half-written data out of the gallery.
+    let mut output = OpenOptions::new().write(true).create_new(true).open(temporary_destination)?;
+    let mut buffer = vec![0_u8; 1024 * 1024];
+    let mut bytes_copied = 0_u64;
+    let mut last_emit = Instant::now();
+    let mut last_percent = u8::MAX;
+
+    emit_import_progress(app, &ImportProgress {
+        operation_id: operation_id.to_string(),
+        overall_percent: progress_percent(completed_bytes_before, total_bytes, completed_files, total_files),
+        file_index,
+        total_files,
+        current_file: current_file.to_string(),
+        bytes_copied: 0,
+        file_size,
+        completed_files,
+        file_succeeded: None,
+        status: "copying".to_string(),
+    });
+
+    loop {
+        let read = input.read(&mut buffer)?;
+        if read == 0 { break; }
+        output.write_all(&buffer[..read])?;
+        bytes_copied = bytes_copied.saturating_add(read as u64);
+
+        let overall_percent = progress_percent(
+            completed_bytes_before.saturating_add(bytes_copied),
+            total_bytes,
+            completed_files,
+            total_files,
+        ).min(99);
+        if overall_percent != last_percent || last_emit.elapsed() >= Duration::from_millis(120) {
+            emit_import_progress(app, &ImportProgress {
+                operation_id: operation_id.to_string(),
+                overall_percent,
+                file_index,
+                total_files,
+                current_file: current_file.to_string(),
+                bytes_copied,
+                file_size,
+                completed_files,
+                file_succeeded: None,
+                status: "copying".to_string(),
+            });
+            last_percent = overall_percent;
+            last_emit = Instant::now();
+        }
+    }
+    output.flush()?;
+    // Flush file contents to the OS before verifying and atomically promoting the staged file.
+    output.sync_all()?;
+    Ok(bytes_copied)
+}
+
+fn safe_operation_id(value: &str) -> String {
+    let sanitized: String = value.chars()
+        .filter(|character| character.is_ascii_alphanumeric() || *character == '-' || *character == '_')
+        .take(48)
+        .collect();
+    if sanitized.is_empty() { "unknown".to_string() } else { sanitized }
+}
+
 #[tauri::command]
 pub fn import_media_files(
+    app: tauri::AppHandle,
     source_paths: Vec<String>,
     root_path: String,
     category: String,
     kind: String,
     mode: String,
+    operation_id: String,
 ) -> Result<ImportResult, String> {
-    if !["photo", "video"].contains(&kind.as_str()) { return Err("На этом этапе импорт поддерживает фото и видео.".into()); }
+    if !["photo", "video", "archive"].contains(&kind.as_str()) {
+        return Err("Неизвестный тип импорта.".into());
+    }
     if !["copy", "move"].contains(&mode.as_str()) { return Err("Неизвестный режим импорта.".into()); }
     let category_name = category_folder(&category)?;
     let kind_name = kind_folder(&kind)?;
@@ -194,56 +317,188 @@ pub fn import_media_files(
     if !root.is_dir() { return Err("Папка медиатеки не найдена. Открой настройки и создай её.".into()); }
     ensure_structure(&root)?;
     let destination_dir = root.join(category_name).join(kind_name);
+    let operation_id = safe_operation_id(&operation_id);
     let mut imported = Vec::new();
     let mut warnings = Vec::new();
 
+    // Snapshot source paths and sizes. A source may still disappear afterwards; that is handled per-file.
+    let mut candidates: Vec<(PathBuf, u64)> = Vec::new();
     for source_string in source_paths {
         let source = PathBuf::from(&source_string);
         if !source.is_file() {
-            warnings.push(format!("Пропущено: источник не является файлом — {}", source.display()));
+            warnings.push(format!("Пропущено: исходный файл не найден или недоступен — {}", source.display()));
             continue;
         }
         let extension = extension_for(&source);
         if !supports_kind(&extension, &kind) {
-            warnings.push(format!("Пропущен неподдерживаемый для этой галереи формат: {}", source.file_name().and_then(|v| v.to_str()).unwrap_or("unknown")));
+            warnings.push(format!("Пропущен неподдерживаемый для этого типа формат: {}", source.file_name().and_then(|v| v.to_str()).unwrap_or("unknown")));
             continue;
         }
-        let file_name = source.file_name().and_then(|v| v.to_str()).unwrap_or("unnamed-file").to_string();
-        let source_canonical = fs::canonicalize(&source).ok();
-        let same_parent = source.parent().and_then(|parent| fs::canonicalize(parent).ok()) == fs::canonicalize(&destination_dir).ok();
-        if same_parent {
-            if let Ok(item) = to_media_item(&source, &root, Some(&kind)) { imported.push(item); }
-            continue;
-        }
-        let destination = unique_destination(&destination_dir, &file_name);
-        match fs::copy(&source, &destination) {
-            Ok(_) => {
-                let source_size = fs::metadata(&source).map(|m| m.len()).unwrap_or(u64::MAX);
-                let destination_size = fs::metadata(&destination).map(|m| m.len()).unwrap_or(u64::MIN);
-                if source_size != destination_size {
-                    let _ = fs::remove_file(&destination);
-                    warnings.push(format!("Проверка размера не прошла, файл оставлен на месте: {file_name}"));
-                    continue;
-                }
-                if mode == "move" {
-                    // Delete the original only after a successful copy and byte-size verification.
-                    if let Some(original) = source_canonical.as_ref() {
-                        if fs::remove_file(original).is_err() {
-                            warnings.push(format!("Копия сохранена, но исходный файл не удалось удалить: {file_name}"));
-                        }
-                    } else if fs::remove_file(&source).is_err() {
-                        warnings.push(format!("Копия сохранена, но исходный файл не удалось удалить: {file_name}"));
-                    }
-                }
-                match to_media_item(&destination, &root, Some(&kind)) {
-                    Ok(item) => imported.push(item),
-                    Err(error) => warnings.push(error),
-                }
-            }
-            Err(error) => warnings.push(format!("Не удалось импортировать {file_name}: {error}")),
+        match fs::metadata(&source) {
+            Ok(metadata) => candidates.push((source, metadata.len())),
+            Err(error) => warnings.push(format!("Не удалось прочитать размер файла {}: {error}", source.display())),
         }
     }
+
+    let total_files = candidates.len();
+    let total_bytes = candidates.iter().fold(0_u64, |total, (_, size)| total.saturating_add(*size));
+    emit_import_progress(&app, &ImportProgress {
+        operation_id: operation_id.clone(),
+        overall_percent: if total_files == 0 { 100 } else { 0 },
+        file_index: 0,
+        total_files,
+        current_file: String::new(),
+        bytes_copied: 0,
+        file_size: total_bytes,
+        completed_files: 0,
+        file_succeeded: None,
+        status: "started".to_string(),
+    });
+
+    let mut completed_bytes = 0_u64;
+    let mut completed_files = 0_usize;
+    for (index, (source, expected_size)) in candidates.iter().enumerate() {
+        let file_name = source.file_name().and_then(|v| v.to_str()).unwrap_or("unnamed-file").to_string();
+        let source_canonical = fs::canonicalize(source).ok();
+        let same_parent = source.parent().and_then(|parent| fs::canonicalize(parent).ok()) == fs::canonicalize(&destination_dir).ok();
+        let mut file_verified = false;
+
+        if same_parent {
+            match to_media_item(source, &root, Some(&kind)) {
+                Ok(item) => { imported.push(item); file_verified = true; },
+                Err(error) => warnings.push(error),
+            }
+        } else {
+            let destination = unique_destination(&destination_dir, &file_name);
+            let temporary_destination = destination_dir.join(format!(".media-library-{operation_id}-{index}.partial"));
+            match copy_file_with_progress(
+                &app,
+                &operation_id,
+                source,
+                &temporary_destination,
+                *expected_size,
+                completed_bytes,
+                total_bytes,
+                index + 1,
+                total_files,
+                &file_name,
+                completed_files,
+            ) {
+                Ok(bytes_copied) => {
+                    let source_size_now = fs::metadata(source).ok().map(|metadata| metadata.len());
+                    let temporary_size = fs::metadata(&temporary_destination).ok().map(|metadata| metadata.len());
+                    let size_matches = bytes_copied == *expected_size
+                        && temporary_size == Some(*expected_size)
+                        && source_size_now.map(|size| size == *expected_size).unwrap_or(true);
+
+                    if !size_matches {
+                        let _ = fs::remove_file(&temporary_destination);
+                        warnings.push(format!("Проверка размера не прошла; неполная копия удалена, оригинал не тронут: {file_name}"));
+                    } else if let Err(error) = fs::rename(&temporary_destination, &destination) {
+                        let _ = fs::remove_file(&temporary_destination);
+                        warnings.push(format!("Копия прочитана, но не удалось завершить запись в медиатеку ({file_name}): {error}. Исходник оставлен."));
+                    } else {
+                        file_verified = true;
+                        if source_size_now.is_none() {
+                            warnings.push(format!("Исходный файл исчез во время копирования; проверенная копия сохранена в медиатеке: {file_name}"));
+                        } else if mode == "move" {
+                            let original = source_canonical.as_deref().unwrap_or(source.as_path());
+                            match fs::remove_file(original) {
+                                Ok(()) => {},
+                                Err(error) if error.kind() == std::io::ErrorKind::NotFound => warnings.push(format!("Копия сохранена, но исходник уже исчез до удаления: {file_name}")),
+                                Err(error) => warnings.push(format!("Копия сохранена, но исходник не удалось удалить: {file_name}: {error}")),
+                            }
+                        }
+                        match to_media_item(&destination, &root, Some(&kind)) {
+                            Ok(item) => imported.push(item),
+                            Err(error) => warnings.push(error),
+                        }
+                    }
+                }
+                Err(error) => {
+                    // If the application is interrupted before this branch runs, startup recovery removes the .partial file.
+                    let _ = fs::remove_file(&temporary_destination);
+                    warnings.push(format!("Не удалось импортировать {file_name}: {error}. Исходник не удалялся."));
+                }
+            }
+        }
+
+        completed_bytes = completed_bytes.saturating_add(*expected_size);
+        completed_files += 1;
+        emit_import_progress(&app, &ImportProgress {
+            operation_id: operation_id.clone(),
+            overall_percent: progress_percent(completed_bytes, total_bytes, completed_files, total_files).min(99),
+            file_index: index + 1,
+            total_files,
+            current_file: file_name,
+            bytes_copied: if file_verified { *expected_size } else { 0 },
+            file_size: *expected_size,
+            completed_files,
+            file_succeeded: Some(file_verified),
+            status: "file-complete".to_string(),
+        });
+    }
+
+    emit_import_progress(&app, &ImportProgress {
+        operation_id,
+        overall_percent: 100,
+        file_index: total_files,
+        total_files,
+        current_file: String::new(),
+        bytes_copied: total_bytes,
+        file_size: total_bytes,
+        completed_files,
+        file_succeeded: None,
+        status: "finished".to_string(),
+    });
     Ok(ImportResult { imported, warnings })
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportRecoveryResult {
+    removed: Vec<String>,
+    failures: Vec<String>,
+}
+
+/// Removes only app-owned staging files. Finalized media and source files are never touched.
+#[tauri::command]
+pub fn recover_interrupted_imports(app: tauri::AppHandle) -> Result<ImportRecoveryResult, String> {
+    let saved_root = get_saved_library_root(app)?;
+    if saved_root.trim().is_empty() { return Ok(ImportRecoveryResult { removed: Vec::new(), failures: Vec::new() }); }
+    let root = PathBuf::from(saved_root);
+    if !root.is_dir() { return Ok(ImportRecoveryResult { removed: Vec::new(), failures: Vec::new() }); }
+
+    let mut removed = Vec::new();
+    let mut failures = Vec::new();
+    for (_, category_name) in CATEGORIES {
+        for (_, kind_name) in KINDS {
+            let directory = root.join(category_name).join(kind_name);
+            let entries = match fs::read_dir(&directory) {
+                Ok(entries) => entries,
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+                Err(error) => {
+                    failures.push(format!("{}: {error}", directory.display()));
+                    continue;
+                }
+            };
+            for entry in entries {
+                let entry = match entry {
+                    Ok(entry) => entry,
+                    Err(error) => { failures.push(format!("Не удалось прочитать каталог {}: {error}", directory.display())); continue; }
+                };
+                let path = entry.path();
+                let name = entry.file_name().to_string_lossy().to_string();
+                if !path.is_file() || !name.starts_with(".media-library-") || !name.ends_with(".partial") { continue; }
+                let relative = path.strip_prefix(&root).unwrap_or(&path).to_string_lossy().replace('\\', "/");
+                match fs::remove_file(&path) {
+                    Ok(()) => removed.push(relative),
+                    Err(error) => failures.push(format!("{relative}: {error}")),
+                }
+            }
+        }
+    }
+    Ok(ImportRecoveryResult { removed, failures })
 }
 
 #[tauri::command]

@@ -19,14 +19,25 @@ export async function importMediaFiles(options: {
   sourcePaths: string[]
   rootPath: string
   category: ContentCategory
-  kind: Extract<MediaKind, 'photo' | 'video'>
+  kind: MediaKind
   mode: 'copy' | 'move'
+  operationId: string
 }): Promise<ImportResult> {
   requireDesktop('Импорт файлов')
-  return invoke<ImportResult>('import_media_files', options)
+  const result = await invoke<ImportResult>('import_media_files', options)
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('media-library:import-complete', {
+      detail: {
+        operationId: options.operationId,
+        importedCount: result.imported.length,
+        warningCount: result.warnings.length,
+      },
+    }))
+  }
+  return result
 }
 
-export async function listLibraryMedia(rootPath: string, kind: Extract<MediaKind, 'photo' | 'video'>): Promise<LibraryMediaItem[]> {
+export async function listLibraryMedia(rootPath: string, kind: MediaKind): Promise<LibraryMediaItem[]> {
   requireDesktop('Чтение медиатеки')
   if (!rootPath) return []
   await registerLibraryRoot(rootPath)

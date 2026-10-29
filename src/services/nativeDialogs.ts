@@ -1,24 +1,25 @@
 import { isTauri } from '@tauri-apps/api/core'
 import { open } from '@tauri-apps/plugin-dialog'
 
-export type PickableMediaKind = 'photo' | 'video'
+export type PickableMediaKind = 'photo' | 'video' | 'archive'
 
 const PHOTO_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp', 'bmp', 'tif', 'tiff', 'avif', 'heic']
 const VIDEO_EXTENSIONS = ['mp4', 'mkv', 'avi', 'mov', 'webm', 'm4v', 'mpg', 'mpeg', 'wmv', 'flv', '3gp', 'ogv', 'gif']
+const ARCHIVE_EXTENSIONS = ['zip', '7z', 'rar', 'tar', 'gz', 'bz2', 'xz']
 
-/** Opens the native Windows file picker. GIFs are treated as animated media in the video gallery. */
+/** Opens the native Windows picker for photos, videos/GIFs, or archives. */
 export async function selectSourceFiles(kind: PickableMediaKind): Promise<string[]> {
   if (!isTauri()) {
     throw new Error('Реальный импорт файлов доступен в настольном приложении. В браузерном режиме можно проверить только временное превью.')
   }
 
-  const extensions = kind === 'photo' ? PHOTO_EXTENSIONS : VIDEO_EXTENSIONS
+  const extensions = kind === 'photo' ? PHOTO_EXTENSIONS : kind === 'video' ? VIDEO_EXTENSIONS : ARCHIVE_EXTENSIONS
   const selected = await open({
     multiple: true,
     directory: false,
-    title: kind === 'photo' ? 'Выберите фотографии' : 'Выберите видео и GIF',
+    title: kind === 'photo' ? 'Выберите фотографии' : kind === 'video' ? 'Выберите видео и GIF' : 'Выберите архивы',
     filters: [
-      { name: kind === 'photo' ? 'Фотографии' : 'Видео и GIF', extensions },
+      { name: kind === 'photo' ? 'Фотографии' : kind === 'video' ? 'Видео и GIF' : 'Архивы', extensions },
       { name: 'Все файлы', extensions: ['*'] },
     ],
   })

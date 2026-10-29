@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { LibraryMediaItem } from '../../types/media'
+import { createVideoLoadTracker } from '../../services/videoActivity'
 
 const props = defineProps<{
   item: LibraryMediaItem
@@ -9,6 +10,7 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{ open: [index: number] }>()
+const videoTracker = createVideoLoadTracker(() => props.item.originalName, 'Превью в сетке')
 
 function playPreview(event: Event) {
   if (props.kind !== 'video' || props.item.extension.toLowerCase() === '.gif') return
@@ -34,12 +36,17 @@ function playPreview(event: Event) {
 
     if (video.dataset.previewLoading === 'true') return
     video.dataset.previewLoading = 'true'
+    videoTracker.start('Загрузка миниатюры')
     const finishLoading = () => { video.dataset.previewLoading = 'false' }
     const onLoadedData = () => {
       finishLoading()
+      videoTracker.ready()
       if (video.dataset.previewActive === 'true') void video.play().catch(() => {})
     }
-    const onError = () => finishLoading()
+    const onError = () => {
+      finishLoading()
+      videoTracker.fail('Не удалось загрузить предпросмотр файла. Проверь путь, доступность диска и кодек.')
+    }
     video.addEventListener('loadeddata', onLoadedData, { once: true })
     video.addEventListener('error', onError, { once: true })
     video.load()
@@ -52,6 +59,10 @@ function stopPreview(event: Event) {
   const video = (event.currentTarget as HTMLElement | null)?.querySelector('video')
   if (!video) return
   video.dataset.previewActive = 'false'
+  if (video.dataset.previewLoading === 'true') {
+    video.dataset.previewLoading = 'false'
+    videoTracker.stop('Предпросмотр закрыт до окончания загрузки.')
+  }
   video.pause()
   video.loop = false
   if (video.readyState >= HTMLMediaElement.HAVE_METADATA) {

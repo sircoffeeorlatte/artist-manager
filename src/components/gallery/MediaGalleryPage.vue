@@ -3,13 +3,13 @@ import { computed, onMounted, onBeforeUnmount, ref, watch } from 'vue'
 import { convertFileSrc, isTauri } from '@tauri-apps/api/core'
 import PageIntro from '../common/PageIntro.vue'
 import MediaViewer from './MediaViewer.vue'
-import GalleryImportPanel from './GalleryImportPanel.vue'
 import MediaGridView from './MediaGridView.vue'
 import TikTokGalleryView from './TikTokGalleryView.vue'
-import { selectSourceFiles } from '../../services/nativeDialogs'
 import { getSavedLibraryRoot, loadLibraryRoot } from '../../services/librarySettings'
-import { importMediaFiles, listLibraryMedia } from '../../services/filesystem'
-import { CATEGORY_LABELS, type ContentCategory, type ImportResult, type LibraryMediaItem } from '../../types/media'
+import { listLibraryMedia } from '../../services/filesystem'
+import { CATEGORY_LABELS, type ContentCategory, type LibraryMediaItem, type MediaKind } from '../../types/media'
+import { beginActivity, errorText, finishActivity } from '../../services/appState'
+import { getUserConfig, setGridColumns, updateUserConfig } from '../../services/userConfig'
 
 const props = defineProps<{
   kind: 'photo' | 'video'
@@ -18,24 +18,20 @@ const props = defineProps<{
 }>()
 
 const items = ref<LibraryMediaItem[]>([])
-const columns = ref(3)
-const galleryMode = ref<'grid' | 'tiktok'>('grid')
+const savedConfig = getUserConfig()
+const columns = ref(savedConfig.gridColumns[props.kind])
+const galleryMode = ref<'grid' | 'tiktok'>(props.kind === 'video' ? savedConfig.videoGalleryMode : 'grid')
 const gridSizes = [2, 3, 4, 5, 6, 7]
 const categoryFilter = ref<'all' | ContentCategory>('all')
-const destinationCategory = ref<ContentCategory>('irl')
-const importMode = ref<'copy' | 'move'>('copy')
-const busy = ref(false)
 const loading = ref(false)
 const message = ref('')
 const errorMessage = ref('')
 const viewerIndex = ref<number | null>(null)
-const browserFileInput = ref<HTMLInputElement | null>(null)
 const rootPath = ref(getSavedLibraryRoot())
 const previewUrls = new Set<string>()
 
 const filteredItems = computed(() => items.value.filter((item) => categoryFilter.value === 'all' || item.category === categoryFilter.value))
 const isDesktop = computed(() => isTauri())
-const acceptedExtensions = computed(() => props.kind === 'photo' ? 'image/*' : 'video/*,image/gif')
 
 function sourceFor(item: LibraryMediaItem) {
   if (item.previewOnly || item.absolutePath.startsWith('blob:')) return item.absolutePath
@@ -44,29 +40,33 @@ function sourceFor(item: LibraryMediaItem) {
 function clearMessages() { message.value = ''; errorMessage.value = '' }
 
 async function reloadItems() {
-  rootPath.value = await loadLibraryRoot()
-  if (!isTauri() || !rootPath.value) {
-    items.value = items.value.filter((item) => item.previewOnly)
-    return
-  }
+  const activityId = beginActivity({
+    kind: 'gallery',
+    title: `Обновление: ${props.title}`,
+    details: 'Чтение настроек и списка файлов',
+  })
   loading.value = true
   clearMessages()
   try {
-    items.value = await listLibraryMedia(rootPath.value, props.kind)
+    rootPath.value = await loadLibraryRoot()
+    if (!isTauri() || !rootPath.value) {
+      items.value = items.value.filter((item) => item.previewOnly)
+      finishActivity(activityId, 'success', !isTauri() ? 'Браузерный режим: показываются только временные превью.' : 'Папка медиатеки не выбрана.')
+      return
+    }
+    const result = await listLibraryMedia(rootPath.value, props.kind)
+    items.value = result
+    finishActivity(activityId, 'success', `Найдено файлов: ${result.length}.`)
   } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : String(error)
+    const message = errorText(error)
+    errorMessage.value = message
+    finishActivity(activityId, 'error', message)
   } finally {
     loading.value = false
   }
 }
 
-function onBrowserFilesChange(event: Event) {
-  const input = event.target as HTMLInputElement
-  addBrowserPreview(input.files)
-  input.value = ''
-}
-
-function addBrowserPreview(files: FileList | null) {
+function addBrowserPreview(files: FileList | File[] | null, category: ContentCategory = 'irl') {
   if (!files?.length) return
   const accepted = Array.from(files).filter((file) => {
     const name = file.name.toLowerCase()
@@ -89,7 +89,7 @@ function addBrowserPreview(files: FileList | null) {
       createdAt: file.lastModified || null,
       modifiedAt: file.lastModified || null,
       importedAt: new Date().toISOString(),
-      category: destinationCategory.value,
+      category,
       tags: [],
       creatorTagId: null,
       isDemo: true,
@@ -101,59 +101,81 @@ function addBrowserPreview(files: FileList | null) {
   if (accepted.length !== files.length) errorMessage.value = 'Часть файлов пропущена: формат не подходит для этой галереи.'
 }
 
-async function addFiles() {
-  clearMessages()
-  if (!isTauri()) {
-    browserFileInput.value?.click()
-    return
-  }
-  if (!rootPath.value) {
-    errorMessage.value = 'Сначала откройте «Настройки» и создайте папку медиатеки.'
-    return
-  }
-  if (importMode.value === 'move' && !window.confirm('Файлы будут скопированы в медиатеку и удалены из исходного места только после проверки копии. Продолжить?')) return
-  busy.value = true
-  try {
-    const sourcePaths = await selectSourceFiles(props.kind)
-    if (!sourcePaths.length) return
-    const result: ImportResult = await importMediaFiles({
-      sourcePaths,
-      rootPath: rootPath.value,
-      category: destinationCategory.value,
-      kind: props.kind,
-      mode: importMode.value,
-    })
-    await reloadItems()
-    message.value = `Импортировано: ${result.imported.length}`
-    if (result.warnings.length) errorMessage.value = result.warnings.join('\n')
-  } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : String(error)
-  } finally {
-    busy.value = false
-  }
-}
-
 function openViewer(index: number) {
   document.querySelectorAll<HTMLVideoElement>('.media-card video').forEach((video) => video.pause())
   viewerIndex.value = index
 }
 function closeViewer() { viewerIndex.value = null }
 
-function onDrop(event: DragEvent) {
-  event.preventDefault()
-  if (!isDesktop.value && event.dataTransfer?.files.length) addBrowserPreview(event.dataTransfer.files)
+function updateCategoryFilter(event: Event) {
+  categoryFilter.value = (event.target as HTMLSelectElement).value as 'all' | ContentCategory
 }
-function onDragOver(event: DragEvent) { event.preventDefault() }
 
-watch(() => props.kind, () => { void reloadItems() })
-onMounted(() => { void reloadItems() })
+function onBrowserImport(event: Event) {
+  const detail = (event as CustomEvent<{ kind: MediaKind; files: File[]; category: ContentCategory }>).detail
+  if (!detail || detail.kind !== props.kind) return
+  addBrowserPreview(detail.files, detail.category)
+}
+function onImportComplete() { void reloadItems() }
+
+const TIKTOK_LAYOUT_CLASS = 'media-library-tiktok-layout'
+function updateTikTokViewportSize() {
+  if (typeof window === 'undefined' || typeof document === 'undefined') return
+  const root = document.documentElement
+  const cssScale = Number.parseFloat(getComputedStyle(root).getPropertyValue('--ui-scale'))
+  const configScale = getUserConfig().appearance.scale / 100
+  const scale = Number.isFinite(cssScale) && cssScale > 0 ? cssScale : configScale || 1
+  // #app itself is zoomed for the user's global scale. Measure its CSS size in
+  // inverse proportion so the scaled TikTok layout still fits the actual viewport.
+  root.style.setProperty('--tiktok-layout-width', `${Math.max(320, window.innerWidth / scale)}px`)
+  root.style.setProperty('--tiktok-layout-height', `${Math.max(320, window.innerHeight / scale)}px`)
+}
+function syncTikTokLayout() {
+  if (typeof document === 'undefined') return
+  const active = props.kind === 'video' && galleryMode.value === 'tiktok'
+  const root = document.documentElement
+  root.classList.toggle(TIKTOK_LAYOUT_CLASS, active)
+  if (active) updateTikTokViewportSize()
+  else {
+    root.style.removeProperty('--tiktok-layout-width')
+    root.style.removeProperty('--tiktok-layout-height')
+  }
+}
+function onTikTokWindowResize() {
+  if (props.kind === 'video' && galleryMode.value === 'tiktok') updateTikTokViewportSize()
+}
+
+watch(columns, (value) => setGridColumns(props.kind, value))
+watch(galleryMode, (value) => {
+  syncTikTokLayout()
+  if (props.kind === 'video') updateUserConfig({ videoGalleryMode: value })
+})
+watch(() => props.kind, (kind) => {
+  columns.value = getUserConfig().gridColumns[kind]
+  galleryMode.value = kind === 'video' ? getUserConfig().videoGalleryMode : 'grid'
+  syncTikTokLayout()
+  void reloadItems()
+})
+onMounted(() => {
+  syncTikTokLayout()
+  void reloadItems()
+  window.addEventListener('media-library:browser-import', onBrowserImport)
+  window.addEventListener('media-library:import-complete', onImportComplete)
+  window.addEventListener('resize', onTikTokWindowResize)
+})
 onBeforeUnmount(() => {
+  document.documentElement.classList.remove(TIKTOK_LAYOUT_CLASS)
+  document.documentElement.style.removeProperty('--tiktok-layout-width')
+  document.documentElement.style.removeProperty('--tiktok-layout-height')
+  window.removeEventListener('media-library:browser-import', onBrowserImport)
+  window.removeEventListener('media-library:import-complete', onImportComplete)
+  window.removeEventListener('resize', onTikTokWindowResize)
   for (const url of previewUrls) URL.revokeObjectURL(url)
 })
 </script>
 
 <template>
-  <div class="gallery-page" :class="{ 'is-tiktok-mode': props.kind === 'video' && galleryMode === 'tiktok' }" @drop="onDrop" @dragover="onDragOver">
+  <div class="gallery-page" :class="{ 'is-tiktok-mode': props.kind === 'video' && galleryMode === 'tiktok' }">
     <PageIntro
       v-if="galleryMode === 'grid'"
       :title="title"
@@ -162,20 +184,6 @@ onBeforeUnmount(() => {
       :icon="props.kind === 'photo' ? '▧' : '▶'"
     />
 
-    <GalleryImportPanel
-      v-if="galleryMode === 'grid'"
-      :kind="props.kind"
-      :is-desktop="isDesktop"
-      :destination-category="destinationCategory"
-      :category-filter="categoryFilter"
-      :import-mode="importMode"
-      :busy="busy"
-      @update:destination-category="destinationCategory = $event"
-      @update:category-filter="categoryFilter = $event"
-      @update:import-mode="importMode = $event"
-      @add-files="addFiles"
-    />
-    <input ref="browserFileInput" class="hidden" type="file" multiple :accept="acceptedExtensions" @change="onBrowserFilesChange" />
 
     <div v-if="galleryMode === 'grid' && message" class="notice notice-success" style="margin-top: 12px">{{ message }}</div>
     <div v-if="galleryMode === 'grid' && errorMessage" class="notice notice-error" style="margin-top: 12px; white-space: pre-line">{{ errorMessage }}</div>
@@ -186,6 +194,15 @@ onBeforeUnmount(() => {
         <span class="gallery-toolbar-hint">{{ categoryFilter === 'all' ? 'Все категории' : CATEGORY_LABELS[categoryFilter] }}</span>
       </div>
       <div class="gallery-toolbar-actions">
+        <label class="gallery-category-filter-wrap">
+          <span class="sr-only">Фильтр по категории</span>
+          <select class="field-control gallery-category-filter" :value="categoryFilter" aria-label="Фильтр по категории" @change="updateCategoryFilter">
+            <option value="all">Все категории</option>
+            <option value="irl">IRL</option>
+            <option value="anime">Аниме</option>
+            <option value="3d">3D</option>
+          </select>
+        </label>
         <div v-if="props.kind === 'video'" class="gallery-mode-switch" role="group" aria-label="Режим галереи">
           <button type="button" class="gallery-mode-button" :class="{ 'is-active': galleryMode === 'grid' }" :aria-pressed="galleryMode === 'grid'" @click="galleryMode = 'grid'">Сетка</button>
           <button type="button" class="gallery-mode-button" :class="{ 'is-active': galleryMode === 'tiktok' }" :aria-pressed="galleryMode === 'tiktok'" @click="galleryMode = 'tiktok'">TikTok</button>
@@ -230,8 +247,7 @@ onBeforeUnmount(() => {
     <section v-if="galleryMode === 'grid' && !filteredItems.length" class="gallery-empty">
       <div class="gallery-empty-icon">{{ props.kind === 'photo' ? '▧' : '▶' }}</div>
       <h2>{{ loading ? 'Сканируем медиатеку…' : (categoryFilter === 'all' ? 'Здесь пока пусто' : `В категории «${CATEGORY_LABELS[categoryFilter]}» пока нет файлов`) }}</h2>
-      <p>{{ isDesktop ? (rootPath ? 'Добавь файлы с помощью кнопки выше. Медиатека просканирует папки выбранного хранилища.' : 'Сначала зайди в настройки, выбери диск и создай корневую папку медиатеки.') : 'Выбери файлы для временного предпросмотра — они появятся в сетке, но не будут скопированы на диск.' }}</p>
-      <button v-if="!isDesktop" type="button" class="btn btn-primary" style="margin-top:16px" @click="addFiles">Выбрать файлы</button>
+      <p>{{ isDesktop ? (rootPath ? 'Нажми «Импорт» в верхней панели, чтобы добавить файлы в выбранную категорию.' : 'Сначала зайди в настройки, выбери диск и создай корневую папку медиатеки.') : 'Нажми «Импорт» в верхней панели для временного предпросмотра; файлы не будут скопированы на диск.' }}</p>
     </section>
 
     <MediaViewer v-if="viewerIndex !== null" :items="filteredItems" :initial-index="viewerIndex ?? 0" :media-kind="props.kind" @close="closeViewer" />

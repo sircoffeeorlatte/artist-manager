@@ -5,6 +5,7 @@ import PhotoGalleryPage from '../pages/PhotoGalleryPage.vue'
 import ArchiveGalleryPage from '../pages/ArchiveGalleryPage.vue'
 import DatabasePage from '../pages/DatabasePage.vue'
 import SettingsPage from '../pages/SettingsPage.vue'
+import ImportPage from '../pages/ImportPage.vue'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -15,6 +16,7 @@ const router = createRouter({
     { path: '/gallery/archives', name: 'archives', component: ArchiveGalleryPage, meta: { title: 'Галерея архивов' } },
     { path: '/database', name: 'database', component: DatabasePage, meta: { title: 'База данных файлов' } },
     { path: '/settings', name: 'settings', component: SettingsPage, meta: { title: 'Настройки' } },
+    { path: '/import', name: 'import', component: ImportPage, meta: { title: 'Импорт файлов' } },
     { path: '/:pathMatch(.*)*', redirect: '/' },
   ],
   scrollBehavior: () => ({ top: 0 }),

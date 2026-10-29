@@ -1,11 +1,22 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-import { RouterLink, RouterView, useRoute } from 'vue-router'
+import { computed, onMounted } from 'vue'
+import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
 import { getRuntimeLabel } from '../services/platform'
+import AppActivityOverlay from '../components/status/AppActivityOverlay.vue'
+import AppWallpaperBackground from '../components/appearance/AppWallpaperBackground.vue'
+import { initializeAppState } from '../services/appState'
 
 const route = useRoute()
+const router = useRouter()
+onMounted(() => { void initializeAppState() })
 const pageTitle = computed(() => String(route.meta.title ?? 'Локальная медиатека'))
 const runtimeLabel = getRuntimeLabel()
+function openImport() {
+  const kind = route.path.startsWith('/gallery/videos')
+    ? 'video'
+    : route.path.startsWith('/gallery/archives') ? 'archive' : 'photo'
+  void router.push({ path: '/import', query: { kind } })
+}
 
 const navigation = [
   { label: 'Главная', to: '/', icon: '⌂', group: 'БИБЛИОТЕКА' },
@@ -13,6 +24,7 @@ const navigation = [
   { label: 'Фото', to: '/gallery/photos', icon: '▧', group: '' },
   { label: 'Архивы', to: '/gallery/archives', icon: '▤', group: '' },
   { label: 'База файлов', to: '/database', icon: '⌘', group: 'ИНСТРУМЕНТЫ' },
+  { label: 'Импорт файлов', to: '/import', icon: '⇧', group: '' },
   { label: 'Настройки', to: '/settings', icon: '⚙', group: '' },
 ]
 
@@ -24,6 +36,7 @@ function isActive(path: string) {
 
 <template>
   <div class="app-shell">
+    <AppWallpaperBackground />
     <aside class="app-sidebar">
       <RouterLink to="/" class="brand-lockup">
         <span class="brand-mark" aria-hidden="true"><span></span><span></span><span></span><span></span></span>
@@ -60,7 +73,11 @@ function isActive(path: string) {
           <span class="topbar-separator">/</span>
           <span class="topbar-current">{{ pageTitle }}</span>
         </div>
-        <div class="topbar-status"><span class="status-light"></span>Локальное приложение</div>
+        <div class="topbar-actions">
+          <button type="button" class="btn btn-primary topbar-import-button" @click="openImport"><span aria-hidden="true">⇧</span> Импорт</button>
+          <div class="topbar-status"><span class="status-light"></span>Локальное приложение</div>
+          <AppActivityOverlay />
+        </div>
       </header>
       <main class="app-content">
         <RouterView />

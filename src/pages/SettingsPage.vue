@@ -2,10 +2,13 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { isTauri } from '@tauri-apps/api/core'
 import PageIntro from '../components/common/PageIntro.vue'
+import WallpaperLibrary from '../components/appearance/WallpaperLibrary.vue'
 import { selectLibraryParentFolder } from '../services/nativeDialogs'
 import { createLibraryStructure, registerLibraryRoot } from '../services/filesystem'
 import { getSavedLibraryRoot, joinPath, loadLibraryRoot, persistLibraryRoot, splitPath } from '../services/librarySettings'
 import { applyAppearanceSettings, DEFAULT_APPEARANCE_SETTINGS, getSavedAppearanceSettings } from '../services/appearanceSettings'
+import { beginActivity, errorText, finishActivity } from '../services/appState'
+import { getUserConfig, getUserConfigPath, updateUserConfig, type StartupPage } from '../services/userConfig'
 
 const parentPath = ref('')
 const folderName = ref('MediaLibrary')
@@ -14,37 +17,106 @@ const busy = ref(false)
 const errorMessage = ref('')
 const statusMessage = ref('')
 const appearance = ref(getSavedAppearanceSettings())
+const userConfig = getUserConfig()
+const startupPage = ref<StartupPage>(userConfig.startupPage)
+const configPath = ref('Определяем путь конфигурации…')
+const startupPages: Array<{ value: StartupPage; label: string }> = [
+  { value: '/', label: 'Главная' },
+  { value: '/gallery/videos', label: 'Галерея видео' },
+  { value: '/gallery/photos', label: 'Галерея фото' },
+  { value: '/gallery/archives', label: 'Галерея архивов' },
+  { value: '/import', label: 'Импорт файлов' },
+  { value: '/database', label: 'База данных файлов' },
+  { value: '/settings', label: 'Настройки' },
+]
 const isDesktop = computed(() => isTauri())
 const previewRoot = computed(() => parentPath.value.trim() && folderName.value.trim() ? joinPath(parentPath.value.trim(), folderName.value.trim()) : currentRoot.value)
 const categories = [
-  { title: 'IRL', folder: 'IRL', folders: ['Фото', 'Видео', 'Архивы'] },
-  { title: 'Аниме', folder: 'Аниме', folders: ['Фото', 'Видео', 'Архивы'] },
-  { title: '3D', folder: '3D', folders: ['Фото', 'Видео', 'Архивы'] },
+  { title: 'IRL', folder: 'IRL', description: 'Реальные фото и видео', folders: ['Фото', 'Видео', 'Архивы'] },
+  { title: 'Аниме', folder: 'Аниме', description: 'Анимация и связанные медиа', folders: ['Фото', 'Видео', 'Архивы'] },
+  { title: '3D', folder: '3D', description: 'Рендеры и 3D-контент', folders: ['Фото', 'Видео', 'Архивы'] },
+]
+const folderTreeText = computed(() => {
+  const lines = [`${folderName.value || 'MediaLibrary'}/`]
+  for (const category of categories) {
+    lines.push(`├── ${category.folder}/`)
+    category.folders.forEach((folder, index) => {
+      lines.push(`│   ${index === category.folders.length - 1 ? '└' : '├'}── ${folder}/`)
+    })
+  }
+  lines.push('└── wallpapers/')
+  return lines.join('\n')
+})
+const backgroundPresets = [
+  { name: 'Графит', color: '#101114' },
+  { name: 'Холодный', color: '#10151c' },
+  { name: 'Сине-серый', color: '#111923' },
+  { name: 'Баклажан', color: '#19121b' },
+  { name: 'Тёмный зелёный', color: '#111914' },
+  { name: 'Тёплый', color: '#191613' },
+  { name: 'Светлый', color: '#f5f7fa' },
+  { name: 'Белый', color: '#ffffff' },
+  { name: 'Светло-серый', color: '#e9edf3' },
 ]
 
 watch(appearance, (value) => applyAppearanceSettings(value), { deep: true, flush: 'sync' })
+watch(startupPage, (value) => updateUserConfig({ startupPage: value }))
+
+function setAppearanceTheme(theme: 'dark' | 'light') {
+  const previousDefault = appearance.value.theme === 'light' ? '#f5f7fa' : '#101114'
+  const nextDefault = theme === 'light' ? '#f5f7fa' : '#101114'
+  // Follow the theme's recommended background until the user chooses a custom one.
+  if (appearance.value.backgroundColor.toLowerCase() === previousDefault) {
+    appearance.value.backgroundColor = nextDefault
+  }
+  appearance.value.theme = theme
+}
+
+function handleThemeChange(event: Event) {
+  const value = (event.target as HTMLSelectElement).value
+  setAppearanceTheme(value === 'light' ? 'light' : 'dark')
+}
 
 function resetAppearance() {
   appearance.value = { ...DEFAULT_APPEARANCE_SETTINGS }
 }
 
 onMounted(async () => {
-  currentRoot.value = await loadLibraryRoot()
-  if (currentRoot.value) {
-    const split = splitPath(currentRoot.value)
-    parentPath.value = split.parent
-    folderName.value = split.name || 'MediaLibrary'
+  const activityId = beginActivity({ kind: 'system', title: 'Загрузка настроек', details: 'Чтение параметров медиатеки' })
+  try {
+    currentRoot.value = await loadLibraryRoot()
+    try { configPath.value = await getUserConfigPath() }
+    catch (error) { configPath.value = errorText(error) }
+    startupPage.value = userConfig.startupPage
+    if (currentRoot.value) {
+      const split = splitPath(currentRoot.value)
+      parentPath.value = split.parent
+      folderName.value = split.name || 'MediaLibrary'
+    }
+    finishActivity(activityId, 'success', currentRoot.value ? 'Путь медиатеки загружен.' : 'Путь медиатеки пока не задан.')
+  } catch (error) {
+    const message = errorText(error)
+    errorMessage.value = message
+    finishActivity(activityId, 'error', message)
   }
 })
 
 async function chooseParent() {
   errorMessage.value = ''
   statusMessage.value = ''
+  const activityId = beginActivity({ kind: 'system', title: 'Выбор папки хранения', details: 'Ожидание выбора в системном диалоге' })
   try {
     const selected = await selectLibraryParentFolder()
-    if (selected) parentPath.value = selected
+    if (selected) {
+      parentPath.value = selected
+      finishActivity(activityId, 'success', `Выбрана папка: ${selected}`)
+    } else {
+      finishActivity(activityId, 'success', 'Выбор папки отменён.')
+    }
   } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : String(error)
+    const message = errorText(error)
+    errorMessage.value = message
+    finishActivity(activityId, 'error', message)
   }
 }
 
@@ -64,6 +136,7 @@ async function createLibrary() {
     return
   }
   busy.value = true
+  const activityId = beginActivity({ kind: 'system', title: 'Создание структуры медиатеки', details: `Папка: ${previewRoot.value}` })
   try {
     const createdRoot = await createLibraryStructure(previewRoot.value)
     await registerLibraryRoot(createdRoot)
@@ -73,8 +146,11 @@ async function createLibrary() {
     parentPath.value = split.parent
     folderName.value = split.name
     statusMessage.value = `Медиатека готова: ${createdRoot}. Существующие файлы не удалялись.`
+    finishActivity(activityId, 'success', `Структура создана или проверена: ${createdRoot}`)
   } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : String(error)
+    const message = errorText(error)
+    errorMessage.value = message
+    finishActivity(activityId, 'error', message)
   } finally {
     busy.value = false
   }
@@ -82,7 +158,7 @@ async function createLibrary() {
 </script>
 
 <template>
-  <PageIntro title="Настройки" eyebrow="WORKSPACE / PREFERENCES" icon="⚙" description="Настрой место хранения медиатеки, акцентный цвет и масштаб интерфейса. Настройки внешнего вида сохраняются автоматически." />
+  <PageIntro title="Настройки" eyebrow="WORKSPACE / PREFERENCES" icon="⚙" description="Настрой место хранения медиатеки, цвета и масштаб интерфейса. Настройки внешнего вида сохраняются автоматически." />
 
   <div class="settings-layout">
     <section class="panel settings-panel">
@@ -109,7 +185,7 @@ async function createLibrary() {
 
       <div class="settings-path-preview">
         <p>ПОЛНЫЙ ПУТЬ ХРАНИЛИЩА</p>
-        <strong>{{ previewRoot || 'Сначала выбери папку на диске' }}</strong>
+        <strong class="selectable-path">{{ previewRoot || 'Сначала выбери папку на диске' }}</strong>
       </div>
 
       <div style="display:flex;flex-wrap:wrap;gap:9px;margin-top:17px">
@@ -124,21 +200,8 @@ async function createLibrary() {
       <div class="panel-heading">
         <div><h2 class="panel-title">Структура папок</h2><p class="panel-subtitle">Папки создаются автоматически. Уже существующие файлы не удаляются.</p></div>
       </div>
-      <div class="folder-tree" style="margin-top:17px">
-        <div class="folder-root">{{ folderName || 'MediaLibrary' }}/</div>
-        <div v-for="(category, categoryIndex) in categories" :key="category.folder">
-          <div class="folder-category">{{ categoryIndex === categories.length - 1 ? '└─' : '├─' }} {{ category.folder }}/</div>
-          <div v-for="(folder, index) in category.folders" :key="folder" class="folder-leaf" style="padding-left:18px">
-            {{ index === category.folders.length - 1 ? '└─' : '├─' }} {{ folder }}/
-          </div>
-        </div>
-      </div>
-      <div class="category-preview-grid">
-        <div class="category-preview"><strong>IRL</strong><span>Реальные фото и видео</span></div>
-        <div class="category-preview"><strong>Аниме</strong><span>Анимация и связанные медиа</span></div>
-        <div class="category-preview"><strong>3D</strong><span>Рендеры и 3D-контент</span></div>
-      </div>
-      <p class="panel-subtitle" style="margin-top:15px">В каждой категории будут подпапки «Фото», «Видео» и «Архивы». В будущем автора можно учитывать как тег типа <code>creator</code>; отдельную страницу авторов пока не добавляем.</p>
+      <pre class="folder-tree-plain" aria-label="Структура папок медиатеки">{{ folderTreeText }}</pre>
+      <p class="panel-subtitle folder-tree-footnote">Категории содержат фото, видео и архивы. Обои хранятся отдельно в корневой папке wallpapers и не смешиваются с галереями.</p>
     </section>
   </div>
 
@@ -146,9 +209,8 @@ async function createLibrary() {
     <div class="panel-heading">
       <div>
         <h2 class="panel-title">Внешний вид</h2>
-        <p class="panel-subtitle">Подстрой акцент и размер интерфейса под себя. Изменения применяются сразу.</p>
+        <p class="panel-subtitle">Подстрой тему, прозрачность поверхностей, акцент, фон и масштаб. Изменения применяются сразу.</p>
       </div>
-      <span class="pill pill-accent">LIVE PREVIEW</span>
     </div>
 
     <div class="appearance-controls">
@@ -171,19 +233,86 @@ async function createLibrary() {
         <input id="interface-scale" v-model.number="appearance.scale" class="appearance-slider" type="range" min="80" max="120" step="5" aria-label="Масштаб интерфейса в процентах" />
         <div class="appearance-scale-markers"><span>80% · Компактно</span><span>100% · Обычно</span><span>120% · Крупно</span></div>
       </div>
-    </div>
 
-    <div class="appearance-preview">
-      <span class="appearance-preview-label">Предпросмотр акцента</span>
-      <div class="appearance-preview-samples">
-        <span class="appearance-preview-mark" aria-hidden="true">✓</span>
-        <button type="button" class="btn btn-primary">Акцентная кнопка</button>
-        <span class="pill pill-accent">Выбрано</span>
+      <div class="appearance-control">
+        <div class="appearance-control-heading">
+          <label for="app-theme" class="appearance-control-title">Тема приложения</label>
+          <strong class="appearance-control-value">{{ appearance.theme === 'light' ? 'Светлая' : 'Тёмная' }}</strong>
+        </div>
+        <p class="appearance-control-hint">Выбери светлую или тёмную палитру. Настройка применяется сразу.</p>
+        <select id="app-theme" class="field-control appearance-select" :value="appearance.theme" @change="handleThemeChange">
+          <option value="dark">Тёмная тема</option>
+          <option value="light">Светлая тема</option>
+        </select>
+      </div>
+
+      <div class="appearance-control">
+        <div class="appearance-control-heading">
+          <label for="visual-mode" class="appearance-control-title">Стиль поверхностей</label>
+          <strong class="appearance-control-value">{{ appearance.visualMode === 'liquid-glass' ? 'Liquid Glass' : 'Standard' }}</strong>
+        </div>
+        <p class="appearance-control-hint">Liquid Glass — прозрачные поверхности с размытием фона. Standard — обычные непрозрачные панели.</p>
+        <select id="visual-mode" v-model="appearance.visualMode" class="field-control appearance-select">
+          <option value="liquid-glass">Liquid Glass</option>
+          <option value="standard">Standard</option>
+        </select>
+      </div>
+
+      <div class="appearance-control appearance-background-control">
+        <div class="appearance-control-heading">
+          <label for="app-background-color" class="appearance-control-title">Цвет фона приложения</label>
+          <strong class="appearance-control-value">{{ appearance.backgroundColor.toUpperCase() }}</strong>
+        </div>
+        <p class="appearance-control-hint">Меняет оттенок фона приложения. Яркость выбранного цвета автоматически подстраивается под текущую тему, чтобы текст оставался читаемым; исходный HEX сохраняется в конфигурации.</p>
+        <div class="appearance-color-picker-row">
+          <input id="app-background-color" v-model="appearance.backgroundColor" class="appearance-color-input" type="color" aria-label="Цвет фона приложения" />
+          <div class="appearance-color-presets" aria-label="Готовые цвета фона">
+            <button
+              v-for="preset in backgroundPresets"
+              :key="preset.color"
+              type="button"
+              class="appearance-color-preset"
+              :class="{ 'is-active': appearance.backgroundColor.toLowerCase() === preset.color }"
+              :style="{ backgroundColor: preset.color }"
+              :aria-label="preset.name"
+              :title="`${preset.name}: ${preset.color}`"
+              @click="appearance.backgroundColor = preset.color"
+            />
+          </div>
+        </div>
       </div>
     </div>
+
+    <WallpaperLibrary v-model="appearance.wallpaperPath" :root-path="currentRoot" />
+
     <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-top:13px">
-      <p class="panel-subtitle" style="margin:0">Цвет и масштаб сохраняются автоматически на этом устройстве.</p>
+      <p class="panel-subtitle" style="margin:0">Тема, стиль поверхностей, акцент, фон и масштаб сохраняются автоматически в конфигурации пользователя.</p>
       <button type="button" class="btn btn-secondary appearance-reset" style="margin-top:0" @click="resetAppearance">Сбросить внешний вид</button>
+    </div>
+  </section>
+
+  <section class="panel settings-run-panel">
+    <div class="panel-heading">
+      <div>
+        <h2 class="panel-title">Запуск приложения и конфигурация</h2>
+        <p class="panel-subtitle">Выбери страницу, которую нужно открывать при обычном запуске, и посмотри, где хранится конфиг пользователя.</p>
+      </div>
+      <span class="pill pill-accent">USER CONFIG</span>
+    </div>
+
+    <div class="settings-run-grid">
+      <label>
+        <span class="field-label">Страница при запуске</span>
+        <select v-model="startupPage" class="field-control">
+          <option v-for="page in startupPages" :key="page.value" :value="page.value">{{ page.label }}</option>
+        </select>
+        <span class="appearance-control-hint">Настройка применяется при следующем запуске, если приложение открывается с главной страницы. Прямая ссылка на другую страницу имеет приоритет.</span>
+      </label>
+      <div class="settings-config-location">
+        <span class="field-label">Файл настроек пользователя</span>
+        <code>{{ configPath }}</code>
+        <p class="appearance-control-hint">В JSON сохраняются тема, стиль Liquid Glass/Standard, акцент, фон, масштаб, громкость, плотность сеток, режим видео, стартовая страница и пути медиатеки.</p>
+      </div>
     </div>
   </section>
 

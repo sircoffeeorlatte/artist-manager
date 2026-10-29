@@ -40,6 +40,19 @@ export interface ImportResult {
   warnings: string[]
 }
 
+export interface ImportProgress {
+  operationId: string
+  overallPercent: number
+  fileIndex: number
+  totalFiles: number
+  currentFile: string
+  bytesCopied: number
+  fileSize: number
+  completedFiles: number
+  fileSucceeded?: boolean
+  status: 'started' | 'copying' | 'file-complete' | 'finished'
+}
+
 export const MEDIA_KIND_LABELS: Record<MediaKind, string> = {
   video: 'Видео',
   photo: 'Фото',

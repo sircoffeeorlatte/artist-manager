@@ -1,3 +1,4 @@
+import { updateUserConfig } from './userConfig'
 import { invoke, isTauri } from '@tauri-apps/api/core'
 
 const LIBRARY_ROOT_KEY = 'media-library.root-path'
@@ -24,6 +25,8 @@ export async function loadLibraryRoot(): Promise<string> {
       const nativePath = await invoke<string>('get_saved_library_root')
       if (nativePath.trim()) {
         saveLibraryRoot(nativePath)
+        // Keep the central user-config snapshot synchronized with legacy path storage too.
+        updateUserConfig({ libraryRoot: nativePath })
         return nativePath
       }
       return ''
@@ -36,6 +39,7 @@ export async function loadLibraryRoot(): Promise<string> {
 
 export async function persistLibraryRoot(path: string): Promise<void> {
   saveLibraryRoot(path)
+  updateUserConfig({ libraryRoot: path })
   if (isTauri()) await invoke<void>('save_library_root', { rootPath: path })
 }
 
