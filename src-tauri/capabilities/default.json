@@ -2,12 +2,13 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default-capability",
   "description": "Базовые системные диалоги и локальные функции для главного окна.",
-  "windows": ["main"],
+  "windows": [
+    "main"
+  ],
   "permissions": [
     "core:default",
     "dialog:default",
     "fs:default",
-    "opener:default",
-    "sql:default"
+    "opener:default"
   ]
 }

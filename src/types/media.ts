@@ -28,6 +28,8 @@ export interface MediaRecord {
   /** True for temporary browser-only uploads and demo rows. */
   isDemo: boolean
   previewOnly?: boolean
+  /** SQLite index availability state. Missing files stay visible only in the database page. */
+  status?: 'available' | 'missing' | 'needs_review'
 }
 
 export interface LibraryMediaItem extends MediaRecord {

@@ -6,7 +6,7 @@ import MediaViewer from './MediaViewer.vue'
 import MediaGridView from './MediaGridView.vue'
 import TikTokGalleryView from './TikTokGalleryView.vue'
 import { getSavedLibraryRoot, loadLibraryRoot } from '../../services/librarySettings'
-import { listLibraryMedia } from '../../services/filesystem'
+import { mediaRepository } from '../../services/mediaRepository'
 import { CATEGORY_LABELS, type ContentCategory, type LibraryMediaItem, type MediaKind } from '../../types/media'
 import { beginActivity, errorText, finishActivity } from '../../services/appState'
 import { getUserConfig, setGridColumns, updateUserConfig } from '../../services/userConfig'
@@ -39,7 +39,7 @@ function sourceFor(item: LibraryMediaItem) {
 }
 function clearMessages() { message.value = ''; errorMessage.value = '' }
 
-async function reloadItems() {
+async function reloadItems(forceRefresh = false) {
   const activityId = beginActivity({
     kind: 'gallery',
     title: `Обновление: ${props.title}`,
@@ -54,7 +54,7 @@ async function reloadItems() {
       finishActivity(activityId, 'success', !isTauri() ? 'Браузерный режим: показываются только временные превью.' : 'Папка медиатеки не выбрана.')
       return
     }
-    const result = await listLibraryMedia(rootPath.value, props.kind)
+    const result = await mediaRepository.listByKind(rootPath.value, props.kind, forceRefresh)
     items.value = result
     finishActivity(activityId, 'success', `Найдено файлов: ${result.length}.`)
   } catch (error) {
@@ -220,7 +220,7 @@ onBeforeUnmount(() => {
             @click="columns = size"
           >{{ size }}×{{ size }}</button>
         </div>
-        <button type="button" class="btn btn-secondary gallery-refresh-button" :disabled="loading" aria-label="Обновить галерею" title="Обновить галерею" @click="reloadItems"><span aria-hidden="true">↻</span></button>
+        <button type="button" class="btn btn-secondary gallery-refresh-button" :disabled="loading" aria-label="Переиндексировать файлы в SQLite и обновить галерею" title="Переиндексировать файлы в SQLite и перечитать каталог" @click="reloadItems(true)"><span aria-hidden="true">↻</span></button>
       </div>
     </div>
 

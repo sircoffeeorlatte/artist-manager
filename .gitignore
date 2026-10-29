@@ -14,3 +14,12 @@ Thumbs.db
 
 # Не хранить пользовательские медиафайлы в репозитории.
 media-library-data/
+
+# User databases must not be committed.
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
+
+# Optional Python smoke tests may generate bytecode.
+__pycache__/
+*.py[cod]

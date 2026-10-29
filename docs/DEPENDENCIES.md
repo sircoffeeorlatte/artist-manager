@@ -1,16 +1,15 @@
-# Основные технологии
+# Зависимости
 
 - Vue 3 + TypeScript — интерфейс.
-- Vue Router — переходы между страницами.
-- Tailwind CSS 4 — utility-классы для оформления.
-- Vite — dev server и сборка фронтенда.
-- Tauri 2 — Windows desktop shell.
-- Tauri Dialog / FS / Opener / SQL plugins — подготовленные системные интеграции.
-- SQLite — локальная база без отдельного сервера.
+- Vue Router — маршруты.
+- Tailwind CSS 4 — стили.
+- Vite — разработка и сборка фронтенда.
+- Tauri 2 — настольная оболочка Windows.
+- Tauri Dialog / FS / Opener plugins — системные диалоги, разрешённые операции с файлами и открытие внешних приложений.
+- `rusqlite` с feature `bundled` — встроенная SQLite в Rust-слое; отдельный SQL-сервер и Tauri SQL plugin не используются.
 
 Официальные руководства:
 - Tauri Windows prerequisites: https://v2.tauri.app/start/prerequisites/
 - Tauri file system plugin: https://v2.tauri.app/plugin/file-system/
 - Tauri dialog plugin: https://v2.tauri.app/plugin/dialog/
-- Tauri SQL plugin: https://v2.tauri.app/plugin/sql/
 - Tauri updater: https://v2.tauri.app/plugin/updater/

@@ -9,6 +9,7 @@ import { getSavedLibraryRoot, joinPath, loadLibraryRoot, persistLibraryRoot, spl
 import { applyAppearanceSettings, DEFAULT_APPEARANCE_SETTINGS, getSavedAppearanceSettings } from '../services/appearanceSettings'
 import { beginActivity, errorText, finishActivity } from '../services/appState'
 import { getUserConfig, getUserConfigPath, updateUserConfig, type StartupPage } from '../services/userConfig'
+import { openContainingFolder, openFolderOrParent } from '../services/fileLocations'
 
 const parentPath = ref('')
 const folderName = ref('MediaLibrary')
@@ -30,6 +31,10 @@ const startupPages: Array<{ value: StartupPage; label: string }> = [
   { value: '/settings', label: 'Настройки' },
 ]
 const isDesktop = computed(() => isTauri())
+const configPathAvailable = computed(() => {
+  const path = configPath.value.trim()
+  return isDesktop.value && (/^[a-zA-Z]:[\\/]/.test(path) || path.startsWith('\\\\') || path.startsWith('/'))
+})
 const previewRoot = computed(() => parentPath.value.trim() && folderName.value.trim() ? joinPath(parentPath.value.trim(), folderName.value.trim()) : currentRoot.value)
 const categories = [
   { title: 'IRL', folder: 'IRL', description: 'Реальные фото и видео', folders: ['Фото', 'Видео', 'Архивы'] },
@@ -79,6 +84,17 @@ function handleThemeChange(event: Event) {
 
 function resetAppearance() {
   appearance.value = { ...DEFAULT_APPEARANCE_SETTINGS }
+}
+
+async function openStorageFolder(path: string) {
+  try { await openFolderOrParent(path) }
+  catch (error) { errorMessage.value = errorText(error) }
+}
+
+async function openConfigFolder() {
+  if (!configPathAvailable.value) return
+  try { await openContainingFolder(configPath.value) }
+  catch (error) { errorMessage.value = errorText(error) }
 }
 
 onMounted(async () => {
@@ -160,6 +176,20 @@ async function createLibrary() {
 <template>
   <PageIntro title="Настройки" eyebrow="WORKSPACE / PREFERENCES" icon="⚙" description="Настрой место хранения медиатеки, цвета и масштаб интерфейса. Настройки внешнего вида сохраняются автоматически." />
 
+  <section class="panel settings-current-storage-panel">
+    <div class="panel-heading">
+      <div><h2 class="panel-title">Текущее хранилище</h2><p class="panel-subtitle">Сохранённая папка, с которой приложение работает прямо сейчас.</p></div>
+      <div class="settings-current-storage-actions">
+        <span class="pill" :class="currentRoot ? 'pill-accent' : ''">{{ currentRoot ? 'НАСТРОЕНО' : 'НЕ ВЫБРАНО' }}</span>
+        <button type="button" class="btn btn-secondary" :disabled="!isDesktop || !currentRoot" @click="openStorageFolder(currentRoot)">Открыть папку ↗</button>
+      </div>
+    </div>
+    <button v-if="currentRoot" type="button" class="path-open-button settings-current-storage-path selectable-path" :disabled="!isDesktop" title="Открыть текущую папку хранилища" @click="openStorageFolder(currentRoot)">
+      <code>{{ currentRoot }}</code><span aria-hidden="true">↗</span>
+    </button>
+    <p v-else class="panel-subtitle settings-current-storage-empty">Сначала выбери или создай папку медиатеки ниже.</p>
+  </section>
+
   <div class="settings-layout">
     <section class="panel settings-panel">
       <div class="panel-heading">
@@ -185,7 +215,9 @@ async function createLibrary() {
 
       <div class="settings-path-preview">
         <p>ПОЛНЫЙ ПУТЬ ХРАНИЛИЩА</p>
-        <strong class="selectable-path">{{ previewRoot || 'Сначала выбери папку на диске' }}</strong>
+        <button type="button" class="path-open-button settings-storage-path-action selectable-path" :disabled="!isDesktop || !previewRoot" title="Открыть папку хранилища или её родительскую папку" @click="openStorageFolder(previewRoot)">
+          <strong>{{ previewRoot || 'Сначала выбери папку на диске' }}</strong><span aria-hidden="true">↗</span>
+        </button>
       </div>
 
       <div style="display:flex;flex-wrap:wrap;gap:9px;margin-top:17px">
@@ -310,17 +342,13 @@ async function createLibrary() {
       </label>
       <div class="settings-config-location">
         <span class="field-label">Файл настроек пользователя</span>
-        <code>{{ configPath }}</code>
+        <button type="button" class="path-open-button settings-config-path selectable-path" :disabled="!configPathAvailable" title="Открыть папку с user-config.json" @click="openConfigFolder">
+          <code>{{ configPath }}</code><span aria-hidden="true">↗</span>
+        </button>
         <p class="appearance-control-hint">В JSON сохраняются тема, стиль Liquid Glass/Standard, акцент, фон, масштаб, громкость, плотность сеток, режим видео, стартовая страница и пути медиатеки.</p>
       </div>
     </div>
   </section>
 
-  <section v-if="currentRoot" class="panel" style="margin-top:15px;padding:17px">
-    <div class="panel-heading">
-      <div><h2 class="panel-title">Текущее хранилище</h2><p class="panel-subtitle">Сохранённый путь, который приложение использует для работы с файлами.</p></div>
-      <span class="pill pill-accent">НАСТРОЕНО</span>
-    </div>
-    <p style="margin:12px 0 0;color:#c8d5e4;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:11px;line-height:1.8;overflow-wrap:anywhere">{{ currentRoot }}</p>
-  </section>
+
 </template>

@@ -5,7 +5,7 @@ import { openPath } from '@tauri-apps/plugin-opener'
 import PageIntro from '../components/common/PageIntro.vue'
 import { CATEGORY_LABELS, type LibraryMediaItem } from '../types/media'
 import { getSavedLibraryRoot, loadLibraryRoot } from '../services/librarySettings'
-import { listLibraryMedia } from '../services/filesystem'
+import { mediaRepository } from '../services/mediaRepository'
 import { formatBytes, formatDate } from '../services/formatters'
 import { beginActivity, errorText, finishActivity } from '../services/appState'
 import { getUserConfig, setGridColumns } from '../services/userConfig'
@@ -27,7 +27,7 @@ const formats = [
   { extension: 'TAR / GZ', description: 'Unix-архивы и сжатие', accent: '▧' },
 ]
 
-async function reloadArchives() {
+async function reloadArchives(forceRefresh = false) {
   const activityId = beginActivity({ kind: 'gallery', title: 'Обновление галереи архивов', details: 'Чтение списка архивов' })
   loading.value = true
   errorMessage.value = ''
@@ -38,7 +38,7 @@ async function reloadArchives() {
       finishActivity(activityId, 'success', !isTauri() ? 'Браузерный режим: доступен только просмотр интерфейса.' : 'Папка медиатеки не выбрана.')
       return
     }
-    const result = await listLibraryMedia(rootPath.value, 'archive')
+    const result = await mediaRepository.listByKind(rootPath.value, 'archive', forceRefresh)
     items.value = result
     finishActivity(activityId, 'success', `Найдено архивов: ${result.length}.`)
   } catch (error) {
@@ -102,7 +102,7 @@ onBeforeUnmount(() => window.removeEventListener('media-library:import-complete'
             @click="archiveColumns = size"
           >{{ size }}×{{ size }}</button>
         </div>
-        <button type="button" class="btn btn-secondary" :disabled="loading" @click="reloadArchives"><span aria-hidden="true">↻</span> Обновить</button>
+        <button type="button" class="btn btn-secondary" :disabled="loading" @click="reloadArchives(true)"><span aria-hidden="true">↻</span> Обновить</button>
       </div>
     </div>
 

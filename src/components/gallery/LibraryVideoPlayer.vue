@@ -180,6 +180,35 @@ onBeforeUnmount(() => {
 .library-video-player-shell .video-js .vjs-volume-level,
 .library-video-player-shell .video-js .vjs-slider-bar { background: var(--accent); }
 
+/* Replace Video.js's private-use thumb glyph with a CSS circle for WebView2 builds without that glyph. */
+.library-video-player-shell .video-js .vjs-play-progress::before,
+.library-video-player-shell .video-js .vjs-volume-level::before {
+  content: "" !important;
+  position: absolute;
+  top: 50%;
+  right: -0.42em;
+  display: block;
+  width: 0.84em;
+  height: 0.84em;
+  border: 1px solid rgb(255 255 255 / 78%);
+  border-radius: 50%;
+  background: var(--accent-strong, var(--accent));
+  box-shadow: 0 1px 4px rgb(0 0 0 / 30%);
+  transform: translateY(-50%);
+  font-family: inherit !important;
+}
+.library-video-player-shell .video-js .vjs-icon-circle::before,
+.library-video-player-shell .video-js .vjs-seek-to-live-control .vjs-icon-placeholder::before {
+  content: "" !important;
+  display: inline-block;
+  width: 0.62em;
+  height: 0.62em;
+  border-radius: 50%;
+  background: currentColor;
+  vertical-align: 0.02em;
+  font-family: inherit !important;
+}
+
 .library-video-player-shell .video-js .vjs-load-progress,
 .library-video-player-shell .video-js .vjs-load-progress div { background: #77839a; }
 

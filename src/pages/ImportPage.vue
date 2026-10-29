@@ -202,12 +202,14 @@ function leaveImport() {
       </section>
     </div>
 
-    <div v-if="isDraggingFiles" class="import-drop-overlay" role="status" aria-live="polite">
-      <div class="import-drop-overlay-card">
-        <span class="import-drop-overlay-icon" aria-hidden="true">↓</span>
-        <strong>Отпусти файлы, чтобы добавить их в очередь</strong>
-        <p>Поддерживаемые расширения зависят от выбранного типа: фото, видео или архивы.</p>
+    <Teleport to="body">
+      <div v-if="isDraggingFiles" class="import-drop-overlay" role="status" aria-live="polite">
+        <div class="import-drop-overlay-card">
+          <span class="import-drop-overlay-icon" aria-hidden="true">↓</span>
+          <strong>Отпусти файлы, чтобы добавить их в очередь</strong>
+          <p>Поддерживаемые расширения зависят от выбранного типа: фото, видео или архивы.</p>
+        </div>
       </div>
-    </div>
+    </Teleport>
   </div>
 </template>

@@ -47,8 +47,20 @@ impl Default for GridColumns {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
+pub struct AppPermissions {
+    /// Explicit app-level consent before opening folders in Windows Explorer.
+    pub open_folders: bool,
+}
+
+impl Default for AppPermissions {
+    fn default() -> Self { Self { open_folders: false } }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
 pub struct UserConfig {
     pub version: u32,
+    pub permissions: AppPermissions,
     pub appearance: AppearanceConfig,
     pub video: VideoConfig,
     pub grid_columns: GridColumns,
@@ -61,6 +73,7 @@ impl Default for UserConfig {
     fn default() -> Self {
         Self {
             version: 1,
+            permissions: AppPermissions::default(),
             appearance: AppearanceConfig::default(),
             video: VideoConfig::default(),
             grid_columns: GridColumns::default(),
@@ -183,4 +196,43 @@ pub fn save_user_config(app: AppHandle, config: UserConfig) -> Result<(), String
 #[tauri::command]
 pub fn get_user_config_path(app: AppHandle) -> Result<String, String> {
     Ok(config_path(&app)?.to_string_lossy().to_string())
+}
+
+
+/// Opens an existing folder in the Windows Explorer without relying on the opener plugin ACL.
+/// The frontend still gates this command behind the user's explicit in-app consent.
+#[tauri::command]
+pub fn open_folder_in_explorer(path: String) -> Result<(), String> {
+    use std::path::Path;
+    use std::process::Command;
+
+    let folder = Path::new(path.trim());
+    if path.trim().is_empty() {
+        return Err("Путь к папке не указан.".to_string());
+    }
+    if !folder.is_absolute() {
+        return Err("Для открытия папки нужен абсолютный путь.".to_string());
+    }
+    if !folder.is_dir() {
+        return Err(format!("Папка не найдена или недоступна: {}", folder.display()));
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        let explorer = std::env::var_os("WINDIR")
+            .map(|root| PathBuf::from(root).join("explorer.exe"))
+            .filter(|candidate| candidate.is_file())
+            .unwrap_or_else(|| PathBuf::from("explorer.exe"));
+        Command::new(explorer)
+            .arg(folder)
+            .spawn()
+            .map(|_| ())
+            .map_err(|error| format!("Не удалось открыть Проводник Windows: {error}"))
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = Command::new("xdg-open").arg(folder).spawn();
+        Err("Эта команда предназначена для настольной версии Windows.".to_string())
+    }
 }

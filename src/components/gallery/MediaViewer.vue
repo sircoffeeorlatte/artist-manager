@@ -8,6 +8,7 @@ import { formatBytes, formatDate } from '../../services/formatters'
 import LibraryVideoPlayer from './LibraryVideoPlayer.vue'
 import { notify } from '../../services/appState'
 import { getUserConfig, updateUserConfig } from '../../services/userConfig'
+import { openContainingFolder } from '../../services/fileLocations'
 
 const props = defineProps<{
   items: LibraryMediaItem[]
@@ -84,6 +85,14 @@ async function openExternally() {
   catch (error) {
     externalOpenError.value = error instanceof Error ? error.message : String(error)
     notify('error', 'Не удалось открыть файл внешним плеером', externalOpenError.value)
+  }
+}
+async function openCurrentFolder() {
+  if (!current.value || !isTauri() || current.value.previewOnly) return
+  try { await openContainingFolder(current.value.absolutePath) }
+  catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    notify('error', 'Не удалось открыть папку файла', message)
   }
 }
 function changeZoom(delta: number) {
@@ -240,6 +249,10 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
             <div><span class="page-eyebrow">ИНФОРМАЦИЯ</span><h2>О файле</h2></div>
             <span class="media-viewer-info-index">{{ currentIndex + 1 }} / {{ items.length }}</span>
           </div>
+          <button v-if="isTauri() && !current.previewOnly" type="button" class="btn btn-secondary media-viewer-open-folder" @click="openCurrentFolder">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M3 10h18"/></svg>
+            Открыть папку с файлом
+          </button>
           <dl class="media-viewer-details">
             <div><dt>Имя файла</dt><dd>{{ current.originalName }}</dd></div>
             <div><dt>Путь в медиатеке</dt><dd class="selectable-path">{{ current.relativePath }}</dd></div>

@@ -35,6 +35,7 @@ pub struct LibraryMediaItem {
     creator_tag_id: Option<String>,
     is_demo: bool,
     preview_only: bool,
+    status: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -115,6 +116,7 @@ fn to_media_item(path: &Path, root: &Path, forced_kind: Option<&str>) -> Result<
         creator_tag_id: None,
         is_demo: false,
         preview_only: false,
+        status: "available".to_string(),
     })
 }
 
@@ -439,6 +441,13 @@ pub fn import_media_files(
         });
     }
 
+    // Persist the successful import in SQLite before returning to the UI, even when the import page is open.
+    if !imported.is_empty() {
+        if let Err(error) = super::database::index_library_internal(app.clone(), root.to_string_lossy().to_string()) {
+            warnings.push(format!("Файлы скопированы, но индекс SQLite не обновился: {error}. Открой «База файлов» и нажми «Переиндексировать»."));
+        }
+    }
+
     emit_import_progress(&app, &ImportProgress {
         operation_id,
         overall_percent: 100,
@@ -502,31 +511,37 @@ pub fn recover_interrupted_imports(app: tauri::AppHandle) -> Result<ImportRecove
 }
 
 #[tauri::command]
-pub fn list_library_media(root_path: String, kind: String) -> Result<Vec<LibraryMediaItem>, String> {
-    if !["photo", "video", "archive"].contains(&kind.as_str()) { return Err("Неизвестный тип медиа.".into()); }
-    let root = PathBuf::from(root_path.trim());
-    if !root.is_dir() { return Ok(Vec::new()); }
-    let directory_name = kind_folder(&kind)?;
-    let mut items = Vec::new();
-    for (_, category_name) in CATEGORIES {
-        let folder = root.join(category_name).join(directory_name);
-        let entries = match fs::read_dir(&folder) {
-            Ok(entries) => entries,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
-            Err(error) => return Err(format!("Не удалось прочитать {}: {error}", folder.display())),
-        };
-        for entry in entries {
-            let entry = match entry { Ok(entry) => entry, Err(error) => { eprintln!("Не удалось прочитать запись каталога: {error}"); continue; } };
-            let path = entry.path();
-            if !path.is_file() { continue; }
-            let extension = extension_for(&path);
-            if !supports_kind(&extension, &kind) { continue; }
-            match to_media_item(&path, &root, Some(&kind)) {
-                Ok(item) => items.push(item),
-                Err(error) => eprintln!("{error}"),
-            }
+pub async fn list_library_media(app: tauri::AppHandle, root_path: String, kind: String) -> Result<Vec<LibraryMediaItem>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        if !["photo", "video", "archive"].contains(&kind.as_str()) {
+            return Err("Неизвестный тип медиа.".into());
         }
-    }
-    items.sort_by(|a, b| b.modified_at.cmp(&a.modified_at).then_with(|| a.original_name.to_lowercase().cmp(&b.original_name.to_lowercase())));
-    Ok(items)
+        if root_path.trim().is_empty() {
+            return Ok(Vec::new());
+        }
+        let root = PathBuf::from(root_path.trim());
+        if !root.is_dir() {
+            return Err(format!("Папка медиатеки недоступна: {}. Проверь путь в настройках и подключение диска.", root.display()));
+        }
+        super::database::ensure_indexed(&app, &root_path)?;
+        let records = super::database::query_media_internal(&app, &root_path, Some(&kind), false)?;
+        Ok(records.into_iter().map(|record| LibraryMediaItem {
+            id: record.id,
+            kind: record.kind,
+            original_name: record.original_name,
+            relative_path: record.relative_path,
+            absolute_path: record.absolute_path,
+            extension: record.extension,
+            size_bytes: record.size_bytes,
+            created_at: record.created_at,
+            modified_at: record.modified_at,
+            imported_at: record.imported_at,
+            category: record.category,
+            tags: record.tags,
+            creator_tag_id: record.creator_tag_id,
+            is_demo: false,
+            preview_only: false,
+            status: record.status,
+        }).collect())
+    }).await.map_err(|error| format!("Не удалось прочитать медиатеку: {error}"))?
 }

@@ -1,6 +1,6 @@
--- Planned migration for a future SQLite-backed build.
--- Apply through the migration runner, not by executing the entire schema blindly.
--- It rebuilds tags so a general tag and creator tag may share the same display name.
+-- LEGACY DESIGN DRAFT — not executed by the current runtime migration code.
+-- The live database uses the self-contained baseline migration 0003_runtime_sqlite_index.sql.
+-- Kept only as history from the pre-runtime prototype; do not apply it before/after 0003.
 PRAGMA foreign_keys = OFF;
 BEGIN TRANSACTION;
 

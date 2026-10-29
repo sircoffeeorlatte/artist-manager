@@ -28,6 +28,10 @@ export interface UserAppearanceConfig {
 
 export interface UserConfig {
   version: 1
+  permissions: {
+    /** User consent for opening folders in the OS file manager. */
+    openFolders: boolean
+  }
   appearance: UserAppearanceConfig
   video: {
     volume: number
@@ -46,6 +50,7 @@ export interface UserConfig {
 
 export const DEFAULT_USER_CONFIG: UserConfig = {
   version: 1,
+  permissions: { openFolders: false },
   appearance: { accentHue: 210, scale: 100, backgroundColor: '#101114', wallpaperPath: '', theme: 'dark', visualMode: 'liquid-glass' },
   video: { volume: 1, muted: false, tiktokMuted: true },
   gridColumns: { photo: 3, video: 3, archive: 3 },
@@ -78,6 +83,7 @@ function boundedNumber(value: unknown, fallback: number, min: number, max: numbe
 
 function normalizeConfig(value: unknown): UserConfig {
   const input = asRecord(value)
+  const permissions = asRecord(input.permissions)
   const appearance = asRecord(input.appearance)
   const video = asRecord(input.video)
   const grid = asRecord(input.gridColumns)
@@ -97,6 +103,7 @@ function normalizeConfig(value: unknown): UserConfig {
 
   return {
     version: 1,
+    permissions: { openFolders: typeof permissions.openFolders === 'boolean' ? permissions.openFolders : false },
     appearance: {
       accentHue: Math.round(boundedNumber(appearance.accentHue, 210, 0, 360)),
       scale: Math.min(120, Math.max(80, scaleValue)),
@@ -143,6 +150,7 @@ function localConfig(): UserConfig | null {
 function snapshot(): UserConfig {
   return normalizeConfig({
     version: config.version,
+    permissions: { ...config.permissions },
     appearance: { ...config.appearance },
     video: { ...config.video },
     gridColumns: { ...config.gridColumns },
@@ -180,6 +188,7 @@ export function getUserConfig(): UserConfig {
 }
 
 export function updateUserConfig(patch: Partial<UserConfig>): void {
+  if (patch.permissions) Object.assign(config.permissions, patch.permissions)
   if (patch.appearance) Object.assign(config.appearance, patch.appearance)
   if (patch.video) Object.assign(config.video, patch.video)
   if (patch.gridColumns) Object.assign(config.gridColumns, patch.gridColumns)

@@ -1,6 +1,27 @@
 import { invoke, isTauri } from '@tauri-apps/api/core'
 import type { ContentCategory, ImportResult, LibraryMediaItem, MediaKind } from '../types/media'
 
+export interface MediaIndexStatus {
+  databasePath: string
+  libraryRoot: string
+  isScanning: boolean
+  lastStartedAt: number | null
+  lastCompletedAt: number | null
+  lastFullScanAt: number | null
+  lastSeenFileCount: number
+  availableCount: number
+  missingCount: number
+  lastError: string | null
+}
+
+export interface MediaIndexResult {
+  scannedFiles: number
+  addedFiles: number
+  updatedFiles: number
+  missingFiles: number
+  completedAt: number
+}
+
 export function requireDesktop(feature: string): void {
   if (!isTauri()) throw new Error(`${feature} доступно только в настольной версии. Запустите run-desktop.cmd.`)
 }
@@ -37,9 +58,34 @@ export async function importMediaFiles(options: {
   return result
 }
 
-export async function listLibraryMedia(rootPath: string, kind: MediaKind): Promise<LibraryMediaItem[]> {
+export async function listLibraryMedia(rootPath: string, kind: MediaKind, refreshIndex = false): Promise<LibraryMediaItem[]> {
   requireDesktop('Чтение медиатеки')
   if (!rootPath) return []
   await registerLibraryRoot(rootPath)
+  if (refreshIndex) await refreshMediaIndex(rootPath)
   return invoke<LibraryMediaItem[]>('list_library_media', { rootPath, kind })
+}
+
+export async function refreshMediaIndex(rootPath: string): Promise<MediaIndexResult> {
+  requireDesktop('Индексация медиатеки')
+  if (!rootPath) throw new Error('Сначала выбери корневую папку медиатеки.')
+  await registerLibraryRoot(rootPath)
+  return invoke<MediaIndexResult>('refresh_media_index', { rootPath })
+}
+
+export async function getMediaIndexStatus(): Promise<MediaIndexStatus> {
+  requireDesktop('Состояние SQLite-индекса')
+  return invoke<MediaIndexStatus>('get_media_index_status')
+}
+
+export async function listIndexedMedia(rootPath: string, includeMissing = true): Promise<LibraryMediaItem[]> {
+  requireDesktop('Чтение SQLite-индекса')
+  if (!rootPath) return []
+  await registerLibraryRoot(rootPath)
+  return invoke<LibraryMediaItem[]>('list_indexed_media', { rootPath, kind: null, includeMissing })
+}
+
+export async function setMediaTags(rootPath: string, relativePath: string, tags: string[]): Promise<void> {
+  requireDesktop('Сохранение тегов')
+  await invoke<void>('set_media_tags', { rootPath, relativePath, tags })
 }

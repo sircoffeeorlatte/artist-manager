@@ -54,7 +54,7 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
 
 /* Main desktop shell */
 .app-shell { min-height: 100vh; background: var(--app-bg); }
-.app-sidebar { position: fixed; inset: 0 auto 0 0; z-index: 1; display: flex; width: 246px; flex-direction: column; padding: 25px 15px 16px; background: var(--sidebar-bg); border-right: 1px solid #202733; }
+.app-sidebar { position: fixed; inset: 0 auto 0 0; z-index: 20; display: flex; width: 246px; flex-direction: column; padding: 25px 15px 16px; background: var(--sidebar-bg); border-right: 1px solid #202733; }
 .brand-lockup { display: flex; align-items: center; gap: 12px; margin: 0 5px 40px; text-decoration: none; }
 .brand-mark { display: grid; width: 39px; height: 39px; grid-template-columns: repeat(2, 1fr); gap: 3px; padding: 8px; border: 1px solid var(--accent-strong); border-radius: 12px; background: var(--accent); box-shadow: 0 0 28px var(--accent-alpha-9); }
 .brand-mark span { display: block; border-radius: 2px; background: var(--accent-text); }
@@ -1364,7 +1364,7 @@ html, body, #app, .app-shell, .app-main-column { background-color: var(--app-bg)
 
 /* v1.5: wallpaper library, compact TikTok viewport and custom side controls. */
 .app-shell { position: relative; isolation: isolate; }
-.app-sidebar { z-index: 1; }
+.app-sidebar { z-index: 20; }
 .app-main-column { position: relative; z-index: 1; background: transparent !important; }
 .app-wallpaper-layer {
   position: fixed;
@@ -2886,3 +2886,169 @@ html[data-visual-mode="standard"] .import-drop-overlay-card { -webkit-backdrop-f
   backdrop-filter: none !important;
 }
 .folder-tree-footnote { margin-top: 8px !important; }
+
+/* v1.7.1: reliable file-location actions, selectable SQLite catalog, and drop overlay stacking. */
+.app-sidebar { z-index: 2 !important; }
+.import-drop-overlay { z-index: 9999 !important; }
+
+/* Unlike the normal app UI, users should be able to select/copy any cell in the full SQLite catalog. */
+.sqlite-data-table,
+.sqlite-data-table * {
+  -webkit-user-select: text !important;
+  user-select: text !important;
+}
+
+.path-open-button {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: 9px;
+  padding: 0;
+  color: var(--text);
+  border: 0;
+  background: transparent;
+  font: inherit;
+  line-height: 1.65;
+  text-align: left;
+  cursor: pointer;
+}
+.path-open-button > code,
+.path-open-button > strong,
+.path-open-button > span:first-child {
+  min-width: 0;
+  flex: 1 1 auto;
+  color: inherit;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.path-open-button > code {
+  display: block;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font-family: Consolas, "Cascadia Mono", monospace;
+  font-size: 11px;
+}
+.path-open-button > strong { display: block; font-weight: 600; }
+.path-open-button > span:last-child {
+  flex: 0 0 auto;
+  margin-left: auto;
+  color: var(--text-muted);
+  font-size: 13px;
+  opacity: .78;
+}
+.path-open-button:hover:not(:disabled) { color: var(--accent-strong, var(--accent)); }
+.path-open-button:hover:not(:disabled) > span:last-child { opacity: 1; }
+.path-open-button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 4px; }
+.path-open-button:disabled { cursor: not-allowed; opacity: .62; }
+
+.settings-current-storage-panel { margin: 0 0 15px; padding: 17px; }
+.settings-current-storage-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 9px; }
+.settings-current-storage-path { margin-top: 12px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel-raised); }
+.settings-current-storage-empty { margin: 12px 0 0; }
+.settings-storage-path-action { margin-top: 8px; }
+.settings-config-location .settings-config-path {
+  margin-top: 7px;
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel-raised);
+}
+.sqlite-index-path .path-open-button { margin-top: 7px; }
+.sqlite-root-path { max-width: min(58%, 680px); padding: 4px 7px; border: 1px solid transparent; border-radius: 5px; }
+.sqlite-root-path:hover:not(:disabled) { border-color: var(--border); background: var(--panel-raised); }
+.media-viewer-open-folder { display: flex; width: 100%; align-items: center; justify-content: center; gap: 8px; margin: 12px 0 10px; }
+.media-viewer-open-folder svg { width: 16px; height: 16px; flex: 0 0 16px; }
+
+/* Dark Liquid Glass status rows: clearly separated from the opaque, readable status flyout. */
+html[data-theme="dark"][data-visual-mode="liquid-glass"] .app-status-item {
+  margin: 5px 7px;
+  padding: 11px 9px;
+  border: 1px solid rgb(255 255 255 / 8%) !important;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--panel-raised) 88%, transparent) !important;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 4%), 0 2px 8px rgb(0 0 0 / 10%);
+}
+html[data-theme="dark"][data-visual-mode="liquid-glass"] .app-status-item:last-child { margin-bottom: 7px; }
+html[data-theme="dark"][data-visual-mode="liquid-glass"] .app-status-item-copy strong { color: #edf2fa !important; }
+html[data-theme="dark"][data-visual-mode="liquid-glass"] .app-status-item-copy p { color: #aebbd0 !important; }
+html[data-theme="dark"][data-visual-mode="liquid-glass"] .app-status-item-copy small { color: #8493aa !important; }
+
+/* Make the full-page importer feel like the Settings and Database work panels, not a modal pasted into a page. */
+.import-page .import-dialog-page {
+  width: 100%;
+  margin: 0;
+  border: 1px solid var(--border) !important;
+  border-radius: var(--radius-card, 12px) !important;
+  color: var(--text) !important;
+  background: var(--panel) !important;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 8%) !important;
+  overflow: hidden;
+}
+.import-page .import-dialog-page .import-dialog-header {
+  padding: 18px 20px;
+  border-bottom: 1px solid var(--border-soft) !important;
+  background: var(--panel-raised) !important;
+}
+.import-page .import-dialog-page .import-dialog-title { color: var(--text) !important; }
+.import-page .import-dialog-page .import-dialog-subtitle { color: var(--text-muted) !important; }
+.import-page .import-dialog-page .import-dialog-body { padding: 18px 20px 20px; }
+.import-page .import-dialog-page .import-dialog-footer {
+  padding: 14px 20px;
+  border-top: 1px solid var(--border-soft) !important;
+  border-radius: 0 !important;
+  background: var(--panel-raised) !important;
+}
+.import-page .import-dialog-page .import-kind-option,
+.import-page .import-dialog-page .import-destination-row,
+.import-page .import-dialog-page .import-file-picker,
+.import-page .import-dialog-page .import-file-list,
+.import-page .import-dialog-page .import-progress-panel,
+.import-page .import-dialog-page .import-queue,
+.import-page .import-dialog-page .import-log-panel {
+  border-color: var(--border) !important;
+}
+html[data-visual-mode="liquid-glass"] .import-page .import-dialog-page {
+  background: color-mix(in srgb, var(--panel) 73%, transparent) !important;
+  border-color: color-mix(in srgb, var(--border) 75%, transparent) !important;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 6%), 0 8px 24px rgb(0 0 0 / 9%) !important;
+  -webkit-backdrop-filter: blur(20px) saturate(140%) !important;
+  backdrop-filter: blur(20px) saturate(140%) !important;
+}
+html[data-theme="light"][data-visual-mode="liquid-glass"] .import-page .import-dialog-page {
+  background: rgb(255 255 255 / 68%) !important;
+  border-color: rgb(255 255 255 / 82%) !important;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 88%), 0 8px 24px rgb(28 44 65 / 8%) !important;
+}
+html[data-visual-mode="liquid-glass"] .import-page .import-dialog-page .import-dialog-header,
+html[data-visual-mode="liquid-glass"] .import-page .import-dialog-page .import-dialog-footer {
+  background: color-mix(in srgb, var(--panel-raised) 72%, transparent) !important;
+  -webkit-backdrop-filter: blur(16px) saturate(140%) !important;
+  backdrop-filter: blur(16px) saturate(140%) !important;
+}
+html[data-theme="light"][data-visual-mode="liquid-glass"] .import-page .import-dialog-page .import-dialog-header,
+html[data-theme="light"][data-visual-mode="liquid-glass"] .import-page .import-dialog-page .import-dialog-footer {
+  background: rgb(255 255 255 / 53%) !important;
+}
+html[data-visual-mode="standard"] .import-page .import-dialog-page {
+  background: var(--panel) !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+  box-shadow: none !important;
+}
+
+@media (max-width: 720px) {
+  .settings-current-storage-actions { width: 100%; justify-content: flex-start; margin-top: 8px; }
+  .sqlite-root-path { max-width: 100%; }
+  .import-page .import-dialog-page .import-dialog-header,
+  .import-page .import-dialog-page .import-dialog-body,
+  .import-page .import-dialog-page .import-dialog-footer { padding-right: 13px; padding-left: 13px; }
+}
+.sqlite-catalog-summary { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px 14px; margin-top: 13px; color: var(--text-muted); font-size: 10px; }
+.sqlite-root-path { width: auto; max-width: min(58%, 680px); flex: 0 1 min(58%, 680px); }
+.settings-storage-path-action > strong { margin-top: 0; }
+@media (max-width: 720px) {
+  .sqlite-root-path { max-width: 100%; flex-basis: 100%; }
+}
